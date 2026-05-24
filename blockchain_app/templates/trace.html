@@ -22,12 +22,12 @@
     </form>
 
     <!-- QR TODO notice -->
-    {% comment %} <div class="qr-todo mt-3">
+    {# <div class="qr-todo mt-3">
       <i class="bi bi-qr-code-scan me-2" style="color:#fd7e14;"></i>
       <strong>TODO — Quét QR bằng camera:</strong>
       Tính năng này cần HTTPS. Sau khi deploy lên Render.com hoặc dùng ngrok,
       vào <a href="{{ url_for('scan') }}" class="text-warning fw-bold">trang Quét QR</a> để scan trực tiếp bằng điện thoại.
-    </div> {% endcomment %}
+    </div> #}
   </div>
 </div>
 
@@ -55,8 +55,8 @@
       {% if qr_b64 %}
       <div class="col-md-4 text-center">
         <img src="data:image/png;base64,{{ qr_b64 }}" alt="QR" width="100" class="border rounded p-1">
-        {% comment %} <p class="small text-muted mt-1 mb-0">QR — chưa scan được</p>
-        <span class="badge" style="background:#fd7e14;font-size:.7rem;">TODO: cần HTTPS</span> {% endcomment %}
+        {# <p class="small text-muted mt-1 mb-0">QR — chưa scan được</p>
+        <span class="badge" style="background:#fd7e14;font-size:.7rem;">TODO: cần HTTPS</span> #}
       </div>
       {% endif %}
     </div>
