@@ -203,22 +203,26 @@ class Blockchain:
     def add_block(self, data: dict):
         """
         Thêm block mới vào chain với dữ liệu linh động.
-        - Giai đoạn 1: kiểm tra product_id không được trùng.
-        - Giai đoạn 2-5: kiểm tra product_id phải tồn tại.
+        - Sự kiện 'FARMING': kiểm tra product_id không được trùng.
+        - Các sự kiện khác: kiểm tra product_id phải tồn tại.
         """
         product_id = data.get("product_id")
-        event = data.get("event")
-        is_first_stage = (event == "Trồng & Thu hoạch")
+        event_type = data.get("event_type") # Đã đổi từ 'event' sang 'event_type'
+        is_genesis_event = (event_type == "FARMING")
 
         if not product_id:
             raise ValueError("Product ID là bắt buộc.")
 
-        if not is_first_stage:
+        # Nếu đây là sự kiện tạo sản phẩm (FARMING)
+        if is_genesis_event:
+            # Kiểm tra xem ID này đã được dùng chưa
+            if self.get_trace(product_id):
+                raise ValueError(f"Product ID '{product_id}' đã tồn tại. Không thể tạo mới.")
+        # Với tất cả các sự kiện khác
+        else:
+            # Kiểm tra xem sản phẩm có tồn tại trong chuỗi không
             if not self.get_trace(product_id):
                 raise ValueError(f"Product ID '{product_id}' chưa tồn tại trong chain.")
-        else:
-            if self.get_trace(product_id):
-                raise ValueError(f"Product ID '{product_id}' đã tồn tại.")
 
         new_block = Block(
             index=len(self.chain),

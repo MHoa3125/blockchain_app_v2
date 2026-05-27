@@ -48,20 +48,22 @@
           </div>
           {% endif %}
 
-          <!-- Chọn giai đoạn -->
+          <!-- Chọn loại sự kiện -->
           <div class="mb-3">
-            <label for="stage-select" class="form-label fw-semibold">
-              {% if product_info %}Chọn giai đoạn để cập nhật thông tin:{% else %}Chọn giai đoạn để tạo sản phẩm mới:{% endif %}
+            <label for="event-type-select" class="form-label fw-semibold">
+              {% if product_info.product_id %}Chọn hành động để cập nhật thông tin:{% else %}Chọn hành động để tạo sản phẩm mới:{% endif %}
             </label>
-            <select id="stage-select" name="event" class="form-select">
-              <option value="">-- Vui lòng chọn một giai đoạn --</option>
-              <!-- JS sẽ điền các giai đoạn vào đây -->
+            <select id="event-type-select" name="event_type" class="form-select">
+              <option value="">-- Vui lòng chọn một hành động --</option>
+              {% for type_key in allowed_event_types %}
+              <option value="{{ type_key }}">{{ event_type_labels[type_key] }}</option>
+              {% endfor %}
             </select>
           </div>
 
           <!-- Các trường thông tin động -->
-          <div id="dynamic-fields-container" class="mt-4">
-            <!-- JS sẽ render các trường nhập liệu vào đây -->
+          <div id="dynamic-fields-container">
+            <!-- JS sẽ render các khối form vào đây -->
           </div>
 
           <!-- Nút submit -->
@@ -86,52 +88,50 @@ document.addEventListener("DOMContentLoaded", function() {
   // ===================================================================
   // CÁC BIẾN VÀ HẰNG SỐ
   // ===================================================================
-  const stageSelect = document.getElementById('stage-select');
+  const eventTypeSelect = document.getElementById('event-type-select');
   const dynamicFieldsContainer = document.getElementById('dynamic-fields-container');
   const submitButton = document.getElementById('submit-button');
-  const productIdSearchInput = document.getElementById('product-id-search');
   const productIdFormContainer = document.getElementById('product-id-form-container');
 
-  const currentUserRole = "{{ sub_role }}";
-  const productInfo = {{ product_info | tojson }}; // Dữ liệu sản phẩm từ server
-  const isProductFound = productInfo && Object.keys(productInfo).length > 0;
+  const productInfo = {{ product_info | tojson }};
+  const isUpdateMode = productInfo && Object.keys(productInfo).length > 0 && productInfo.product_id;
 
-  const ALL_STAGES = {
-    "Trồng & Thu hoạch": {
-      roles: ["producer"],
+  // Cấu trúc định nghĩa các trường cho từng loại sự kiện
+  const EVENT_DEFINITIONS = {
+    "FARMING": {
       fields: [
         { name: "product_name", label: "Tên sản phẩm", required: true, placeholder: "VD: Cà phê Robusta" },
-        { name: "harvest_date", label: "Ngày thu hoạch", type: "date", required: true },
-        { name: "farm_location", label: "Địa điểm nông trại", required: true, placeholder: "VD: Bảo Lộc, Lâm Đồng" }
+        { name: "quantity", label: "Sản lượng", required: true, placeholder: "VD: 1000" },
+        { name: "unit", label: "Đơn vị", required: true, placeholder: "VD: kg" },
+        { name: "farm_id", label: "Mã số nông trại", required: true, placeholder: "VD: NT-DL-0123" }
       ]
     },
-    "Đóng gói & Kiểm định": {
-      roles: ["producer"],
+    "TRANSPORT": {
+      fields: [
+        { name: "vehicle_id", label: "Mã số phương tiện", required: true, placeholder: "VD: 51F-123.45" },
+        { name: "temperature_celsius", label: "Nhiệt độ (°C)", type: "number", required: true, placeholder: "VD: 4" },
+        { name: "departure_time", label: "Thời gian khởi hành", type: "datetime-local", required: true }
+      ]
+    },
+    "PACKAGING": {
       fields: [
         { name: "packaging_date", label: "Ngày đóng gói", type: "date", required: true },
-        { name: "quality_certificate", label: "Chứng nhận chất lượng", required: true, placeholder: "VD: VietGAP, GlobalGAP" }
+        { name: "quality_certificate", label: "Chứng nhận chất lượng", placeholder: "VD: VietGAP, GlobalGAP" },
+        { name: "lot_number", label: "Mã số lô", required: true, placeholder: "VD: LOH-2026-05-001" }
       ]
     },
-    "Vận chuyển": {
-      roles: ["transporter"],
+    "DISTRIBUTION": {
       fields: [
-        { name: "transporter_name", label: "Tên nhà vận chuyển", required: true },
-        { name: "shipping_date", label: "Ngày gửi hàng", type: "date", required: true },
-        { name: "estimated_arrival", label: "Ngày dự kiến đến", type: "date", required: true }
+        { name: "distributor_name", label: "Tên nhà phân phối", required: true, placeholder: "VD: Công ty TNHH Phân phối Toàn Cầu" },
+        { name: "arrival_date", label: "Ngày hàng đến", type: "date", required: true },
+        { name: "storage_condition", label: "Điều kiện bảo quản", placeholder: "VD: Nơi khô ráo, thoáng mát" }
       ]
     },
-    "Phân phối": {
-      roles: ["retailer"],
-      fields: [
-        { name: "distributor_name", label: "Tên nhà phân phối", required: true },
-        { name: "arrival_date", label: "Ngày hàng đến", type: "date", required: true }
-      ]
-    },
-    "Bán lẻ": {
-      roles: ["retailer"],
+    "RETAIL": {
       fields: [
         { name: "shelf_date", label: "Ngày lên kệ", type: "date", required: true },
-        { name: "store_location", label: "Địa điểm bán", required: true, placeholder: "VD: Siêu thị ABC, 123 Đường XYZ" }
+        { name: "store_location", label: "Địa điểm bán", required: true, placeholder: "VD: Siêu thị CoopMart, 123 Nguyễn Huệ" },
+        { name: "batch_code", label: "Mã lô hàng bán lẻ", placeholder: "VD: BATCH-SGN-0526-A" }
       ]
     }
   };
@@ -140,99 +140,51 @@ document.addEventListener("DOMContentLoaded", function() {
   // CÁC HÀM TIỆN ÍCH
   // ===================================================================
   /**
-   * Tạo HTML cho các trường nhập liệu dựa trên cấu hình.
-   * @param {Array} fields - Mảng các đối tượng cấu hình trường.
-   * @returns {string} - Chuỗi HTML.
+   * Tạo HTML cho các trường nhập liệu.
    */
   function generateFieldsHtml(fields) {
-    let html = '<div class="row g-3">';
-    let hasFieldsToRender = false;
-
+    let html = '<div class="row g-3 mt-2 border-top pt-4">';
     fields.forEach(field => {
-      hasFieldsToRender = true;
       const requiredStar = field.required ? ' <span class="text-danger">*</span>' : '';
       const requiredAttr = field.required ? 'required' : '';
+      const value = productInfo[field.name] || ''; // Tự động điền thông tin đã có
 
       html += `<div class="col-md-6 mb-2">
-                 <label for="${field.name}" class="form-label fw-semibold">${field.label}${requiredStar}</label>`;
-
-      if (field.type === 'select') {
-        html += `<select name="${field.name}" id="${field.name}" class="form-select" ${requiredAttr}>`;
-        field.options.forEach(opt => { html += `<option value="${opt}">${opt}</option>`; });
-        html += `</select>`;
-      } else {
-        html += `<input type="${field.type || 'text'}" name="${field.name}" id="${field.name}"
-                        class="form-control" placeholder="${field.placeholder || ''}" ${requiredAttr}>`;
-      }
-      html += `</div>`;
+                 <label for="${field.name}" class="form-label fw-semibold">${field.label}${requiredStar}</label>
+                 <input type="${field.type || 'text'}" name="${field.name}" id="${field.name}"
+                        class="form-control" placeholder="${field.placeholder || ''}" value="${value}" ${requiredAttr}>
+               </div>`;
     });
-
     html += '</div>';
-    return hasFieldsToRender ? html : '';
-  }
-
-  /**
-   * Điền các tùy chọn giai đoạn vào dropdown dựa trên vai trò và trạng thái sản phẩm.
-   */
-  function populateStageOptions() {
-    stageSelect.innerHTML = '<option value="">-- Vui lòng chọn một giai đoạn --</option>';
-
-    if (isProductFound) {
-      // CẬP NHẬT SẢN PHẨM: Chỉ hiển thị các giai đoạn chưa làm và được phép
-      const addedFields = Object.keys(productInfo);
-      Object.keys(ALL_STAGES).forEach(stageName => {
-        const stage = ALL_STAGES[stageName];
-        const isRoleAllowed = stage.roles.includes(currentUserRole);
-        // Kiểm tra xem có trường nào của giai đoạn này đã tồn tại trong productInfo không
-        const isStageAdded = stage.fields.some(field => addedFields.includes(field.name));
-
-        if (isRoleAllowed && !isStageAdded) {
-          stageSelect.options.add(new Option(stageName, stageName));
-        }
-      });
-    } else {
-      // TẠO SẢN PHẨM MỚI: Chỉ cho phép "Nhà sản xuất" chọn "Giai đoạn 1"
-      if (currentUserRole === 'producer') {
-        const firstStageName = "Trồng & Thu hoạch";
-        stageSelect.options.add(new Option(firstStageName, firstStageName));
-      } else {
-        stageSelect.disabled = true;
-        stageSelect.innerHTML = '<option value="">-- Cần tìm sản phẩm hoặc bạn không có quyền tạo mới --</option>';
-      }
-    }
+    return html;
   }
 
   // ===================================================================
   // LOGIC KHỞI TẠO VÀ SỰ KIỆN
   // ===================================================================
 
-  // 1. Điền các tùy chọn giai đoạn khi trang tải xong
-  populateStageOptions();
+  // 1. Xử lý sự kiện khi người dùng chọn một loại sự kiện
+  eventTypeSelect.addEventListener('change', function() {
+    const selectedEventType = this.value;
+    dynamicFieldsContainer.innerHTML = "";
+    submitButton.style.display = 'none';
 
-  // 2. Xử lý sự kiện khi người dùng chọn một giai đoạn từ dropdown
-  stageSelect.addEventListener('change', function() {
-    const selectedStageName = this.value;
-    dynamicFieldsContainer.innerHTML = ""; // Xóa các trường cũ
-    submitButton.style.display = 'none';   // Ẩn nút submit
-
-    if (selectedStageName && ALL_STAGES[selectedStageName]) {
-      const fields = ALL_STAGES[selectedStageName].fields;
+    if (selectedEventType && EVENT_DEFINITIONS[selectedEventType]) {
+      const fields = EVENT_DEFINITIONS[selectedEventType].fields;
       dynamicFieldsContainer.innerHTML = generateFieldsHtml(fields);
       submitButton.style.display = 'block';
-
-      // Nếu đang cập nhật, thêm product_id vào form
-      if (isProductFound) {
-        productIdFormContainer.innerHTML = `<input type="hidden" name="product_id" value="${productInfo.product_id}">`;
-      } else {
-        productIdFormContainer.innerHTML = "";
-      }
     }
   });
 
-  // 3. Nếu đang tạo mới, tự động kích hoạt sự kiện change cho Giai đoạn 1
-  if (!isProductFound && currentUserRole === 'producer') {
-      stageSelect.value = "Trồng & Thu hoạch";
-      stageSelect.dispatchEvent(new Event('change'));
+  // 2. Nếu đang ở chế độ cập nhật, thêm product_id vào form
+  if (isUpdateMode) {
+    productIdFormContainer.innerHTML = `<input type="hidden" name="product_id" value="${productInfo.product_id}">`;
+  }
+
+  // 3. Tự động chọn hành động đầu tiên nếu chỉ có 1 lựa chọn
+  if (eventTypeSelect.options.length === 2) {
+      eventTypeSelect.selectedIndex = 1;
+      eventTypeSelect.dispatchEvent(new Event('change'));
   }
 });
 </script>

@@ -8,9 +8,9 @@
   <p class="lead mb-0">Hệ thống quản lý chuỗi cung ứng thực phẩm sạch — minh bạch, bất biến, đáng tin cậy.</p>
 </div>
 
-<!-- 3 Role Cards -->
+<!-- 2 Role Cards -->
 <div class="row g-4">
-  <div class="col-md-4">
+  <div class="col-md-6">
     <div class="card h-100">
       <div class="card-header-navy p-4">
         <i class="bi bi-person-gear fs-2"></i>
@@ -26,14 +26,14 @@
         </ul>
       </div>
       <div class="card-footer bg-white border-0 pb-4 px-4">
-        <a href="{{ url_for('login') }}" class="btn btn-dark w-100">
+        <a href="{{ url_for('login_role', role='producer') }}" class="btn btn-dark w-100">
           <i class="bi bi-box-arrow-in-right me-1"></i>Đăng nhập Producer
         </a>
       </div>
     </div>
   </div>
 
-  <div class="col-md-4">
+  <div class="col-md-6">
     <div class="card h-100">
       <div class="card-header-blue p-4">
         <i class="bi bi-search fs-2"></i>
@@ -51,35 +51,16 @@
         </ul>
       </div>
       <div class="card-footer bg-white border-0 pb-4 px-4">
-        <a href="{{ url_for('login') }}" class="btn w-100" style="background:#2E75B6;color:#fff;">
+        <a href="{{ url_for('login_role', role='consumer') }}" class="btn w-100" style="background:#2E75B6;color:#fff;">
           <i class="bi bi-box-arrow-in-right me-1"></i>Đăng nhập Consumer
         </a>
       </div>
     </div>
   </div>
+</div>
 
-  <div class="col-md-4">
-    <div class="card h-100">
-      <div class="card-header p-4 text-white" style="background:#198754;border-radius:12px 12px 0 0;">
-        <i class="bi bi-shield-check fs-2"></i>
-        <h5 class="mt-2 mb-0">Admin</h5>
-        <small>Quản trị viên</small>
-      </div>
-      <div class="card-body">
-        <p class="text-muted small">Xem toàn bộ blockchain, kiểm tra tính toàn vẹn chain và demo tính bất biến của dữ liệu.</p>
-        <ul class="list-unstyled small text-muted">
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Xem tất cả block</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Validate chain (is_valid)</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Demo tamper — bất biến</li>
-        </ul>
-      </div>
-      <div class="card-footer bg-white border-0 pb-4 px-4">
-        <a href="{{ url_for('login') }}" class="btn btn-success w-100">
-          <i class="bi bi-box-arrow-in-right me-1"></i>Đăng nhập Admin
-        </a>
-      </div>
-    </div>
-  </div>
+<div class="text-center mt-4">
+    <a href="{{ url_for('login_role', role='admin') }}" class="text-muted small">Admin Login</a>
 </div>
 
 {% endblock %}
