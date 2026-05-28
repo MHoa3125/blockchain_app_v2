@@ -48,17 +48,11 @@
           </div>
           {% endif %}
 
-          <!-- Chọn loại sự kiện -->
+          <!-- Trường Event Type (chỉ đọc) -->
           <div class="mb-3">
-            <label for="event-type-select" class="form-label fw-semibold">
-              {% if product_info.product_id %}Chọn hành động để cập nhật thông tin:{% else %}Chọn hành động để tạo sản phẩm mới:{% endif %}
-            </label>
-            <select id="event-type-select" name="event_type" class="form-select">
-              <option value="">-- Vui lòng chọn một hành động --</option>
-              {% for type_key in allowed_event_types %}
-              <option value="{{ type_key }}">{{ event_type_labels[type_key] }}</option>
-              {% endfor %}
-            </select>
+            <label class="form-label fw-bold">Hành động thực hiện</label>
+            <input type="text" class="form-control bg-light" value="{{ event_type_labels.get(current_event, 'N/A') }}" readonly>
+            <input type="hidden" id="event_type_value" name="event_type" value="{{ current_event }}">
           </div>
 
           <!-- Các trường thông tin động -->
@@ -74,7 +68,7 @@
           </div>
 
           <!-- Nút submit -->
-          <button id="submit-button" type="submit" class="btn btn-dark px-4 mt-3" style="display: none;">
+          <button id="submit-button" type="submit" class="btn btn-dark px-4 mt-3">
             <i class="bi bi-plus-lg me-2"></i> Thêm Block vào chuỗi
           </button>
         </form>
@@ -126,11 +120,11 @@ document.addEventListener("DOMContentLoaded", function() {
   // ===================================================================
   // CÁC BIẾN VÀ HẰNG SỐ
   // ===================================================================
-  const eventTypeSelect = document.getElementById('event-type-select');
   const dynamicFieldsContainer = document.getElementById('dynamic-fields-container');
   const submitButton = document.getElementById('submit-button');
   const productIdFormContainer = document.getElementById('product-id-form-container');
   const proofUploadContainer = document.getElementById('proof-upload-container');
+  const eventTypeValue = document.getElementById('event_type_value').value;
 
   const productInfo = {{ product_info | tojson }};
   const isUpdateMode = productInfo && Object.keys(productInfo).length > 0 && productInfo.product_id;
@@ -217,28 +211,6 @@ document.addEventListener("DOMContentLoaded", function() {
     return html;
   }
 
-  // ===================================================================
-  // LOGIC KHỞI TẠO VÀ SỰ KIỆN
-  // ===================================================================
-
-  // 1. Xử lý sự kiện khi người dùng chọn một loại sự kiện
-  eventTypeSelect.addEventListener('change', function() {
-    const selectedEventType = this.value;
-    dynamicFieldsContainer.innerHTML = "";
-    submitButton.style.display = 'none';
-    proofUploadContainer.style.display = 'none';
-
-    if (selectedEventType && EVENT_DEFINITIONS[selectedEventType]) {
-      const fields = EVENT_DEFINITIONS[selectedEventType].fields;
-      dynamicFieldsContainer.innerHTML = generateFieldsHtml(fields);
-      submitButton.style.display = 'block';
-      proofUploadContainer.style.display = 'block';
-
-      // Cập nhật nhãn bằng chứng
-      updateProofLabel(selectedEventType);
-    }
-  });
-
   /**
    * Cập nhật nhãn cho trường tải lên bằng chứng.
    */
@@ -253,23 +225,45 @@ document.addEventListener("DOMContentLoaded", function() {
     }
   }
 
-  // 2. Nếu đang ở chế độ cập nhật, thêm product_id vào form
-  if (isUpdateMode) {
-    productIdFormContainer.innerHTML = `<input type="hidden" name="product_id" value="${productInfo.product_id}">`;
+  // ===================================================================
+  // LOGIC KHỞI TẠO
+  // ===================================================================
+  /**
+   * Hàm chính để khởi tạo form khi trang được tải.
+   */
+  function initializeForm() {
+    // Nếu không có hành động nào hợp lệ (current_event là null/rỗng)
+    if (!eventTypeValue) {
+      submitButton.style.display = 'none';
+      dynamicFieldsContainer.innerHTML = '<div class="alert alert-warning">Không có hành động nào tiếp theo cho sản phẩm này hoặc vai trò của bạn không phù hợp.</div>';
+      return;
+    }
+
+    // Nếu có hành động hợp lệ, render các trường tương ứng
+    if (EVENT_DEFINITIONS[eventTypeValue]) {
+      const fields = EVENT_DEFINITIONS[eventTypeValue].fields;
+      dynamicFieldsContainer.innerHTML = generateFieldsHtml(fields);
+      proofUploadContainer.style.display = 'block';
+      updateProofLabel(eventTypeValue);
+    } else {
+      submitButton.style.display = 'none';
+    }
+
+    // Nếu đang ở chế độ cập nhật (có product_id), thêm trường ẩn vào form
+    if (isUpdateMode) {
+      productIdFormContainer.innerHTML = `<input type="hidden" name="product_id" value="${productInfo.product_id}">`;
+    }
   }
 
-  // 3. Tự động chọn hành động đầu tiên nếu chỉ có 1 lựa chọn
-  if (eventTypeSelect.options.length === 2) {
-      eventTypeSelect.selectedIndex = 1;
-      eventTypeSelect.dispatchEvent(new Event('change'));
-  }
+  // Chạy hàm khởi tạo khi trang được tải
+  initializeForm();
 });
 </script>
 
 <!-- ================================================================== -->
 <!--  DANH SÁCH SẢN PHẨM ĐÃ TẠO (CHỈ DÀNH CHO NHÀ SẢN XUẤT)          -->
 <!-- ================================================================== -->
-{% if sub_role == 'producer' and user_products %}
+{% if sub_role == 'farmer' and user_products %}
 <div class="row mt-5">
     <div class="col-lg-10 offset-lg-1">
         <hr>

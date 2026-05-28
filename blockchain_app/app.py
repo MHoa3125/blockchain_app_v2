@@ -127,7 +127,7 @@ def login_role(role):
 
             # Chuyển hướng đến trang tương ứng
             if role == "producer":
-                return redirect(url_for("producer"))
+                return redirect(url_for("dashboard")) # Chuyển hướng producer tới dashboard mới
             elif role == "admin":
                 return redirect(url_for("admin"))
             else: # consumer
@@ -147,148 +147,195 @@ def logout():
 
 
 # ════════════════════════════════════════════════════════════════
+#  DASHBOARD
+# ════════════════════════════════════════════════════════════════
+@app.route("/dashboard")
+@login_required(role="producer")
+def dashboard():
+    sub_role = session.get("sub_role")
+    user = session.get("user")
+    
+    # Ánh xạ vai trò tới trạng thái (event_type) trước đó mà họ cần xử lý
+    # Ví dụ: 'roaster' cần xử lý các lô đã 'PROCESSING' xong
+    prereq_event_map = {
+        "processor": "HARVEST",
+        "roaster": "PROCESSING",
+        "distributor": "ROASTING",
+        "retailer": "DISTRIBUTION",
+    }
+
+    todo_products = []
+    # Nông dân không có "todo list" từ người khác, họ là người bắt đầu chuỗi
+    if sub_role in prereq_event_map:
+        required_prev_event = prereq_event_map[sub_role]
+        
+        # Lấy tất cả các product_id duy nhất
+        all_product_ids = bc.get_all_product_ids()
+        
+        for pid in all_product_ids:
+            # Lấy block cuối cùng của sản phẩm
+            last_block = bc.get_last_block(pid)
+            if last_block and last_block.data.get("event_type") == required_prev_event:
+                # Nếu trạng thái cuối cùng khớp với yêu cầu, thêm vào to-do list
+                product_name = last_block.data.get("details", {}).get("product_name", pid)
+                todo_products.append({
+                    "product_id": pid,
+                    "product_name": product_name,
+                    "last_event": EVENT_TYPES.get(required_prev_event, required_prev_event),
+                    "last_actor": last_block.data.get("actor")
+                })
+
+    return render_template("dashboard.html", 
+                           sub_role=sub_role,
+                           role_label=ROLE_LABELS.get(sub_role, "Nhà sản xuất"),
+                           todo_products=todo_products)
+
+
+# ════════════════════════════════════════════════════════════════
 #  PRODUCER — Thêm sự kiện
 # ════════════════════════════════════════════════════════════════
 @app.route("/producer", methods=["GET", "POST"])
 @login_required(role="producer")
 def producer():
-    sub_role = session.get("sub_role", "producer")
-    allowed_event_types = ROLE_EVENT_TYPES.get(sub_role, [])
-    role_label = ROLE_LABELS.get(sub_role, "Nhà sản xuất")
+    sub_role = session.get("sub_role")
+    if not sub_role:
+        flash('Thông tin vai trò phụ (sub_role) không tồn tại. Vui lòng đăng nhập lại.', 'danger')
+        return redirect(url_for('login_role', role='producer'))
 
-    # Lấy danh sách sản phẩm do người dùng (nông dân) tạo ra
-    user_products = []
-    if sub_role == "producer": # Chỉ nông dân mới thấy
-        genesis_blocks = bc.get_blocks_by_event_and_actor("FARMING", session["user"])
-        for block in genesis_blocks:
-            product_id = block.data.get("product_id")
-            if product_id:
-                user_products.append({
-                    "product_id": product_id,
-                    "product_name": block.data.get("details", {}).get("product_name", "N/A"),
-                    "qr_code": make_qr_base64(product_id)
-                })
+    user = session.get("user")
+    product_id_from_url = request.args.get('product_id')
+    
+    # --- Định nghĩa Máy trạng thái (State Machine) ---
+    # 1. Ánh xạ vai trò tới hành động họ có thể thực hiện
+    role_to_event = {
+        "farmer": "HARVEST",
+        "processor": "PROCESSING",
+        "roaster": "ROASTING",
+        "distributor": "DISTRIBUTION",
+        "retailer": "RETAIL",
+    }
 
-    # Lấy thông tin chi tiết nếu có product_id trên URL (để fill form)
-    product_info = {}
-    product_id_from_url = request.args.get('product_id', '').strip().upper()
-    if product_id_from_url:
-        trace = bc.get_trace(product_id_from_url)
-        if trace:
-            for block in trace:
-                # Ưu tiên cập nhật từ 'details' nếu có
-                product_info.update(block.data.get("details", {}))
-        
-        # FIX TRIỆT ĐỂ: Luôn thêm product_id vào dict để template sử dụng
-        # Dòng này áp dụng cho mọi vai trò khi cập nhật
-        product_info['product_id'] = product_id_from_url
+    # 2. Ánh xạ trạng thái hiện tại -> trạng thái tiếp theo
+    state_transition = {
+        "HARVEST": "PROCESSING",
+        "PROCESSING": "ROASTING",
+        "ROASTING": "DISTRIBUTION",
+        "DISTRIBUTION": "RETAIL",
+    }
 
-    if request.method == "POST":
-        event_type = request.form.get("event_type")
-
-        if event_type not in allowed_event_types:
-            flash(f"❌ Vai trò '{role_label}' không được phép thực hiện hành động này.", "danger")
-            return redirect(url_for('producer'))
-
-        details = {}
+    # --- XỬ LÝ POST REQUEST (Khi người dùng gửi form) ---
+    if request.method == 'POST':
+        event_type = request.form.get('event_type') # Lấy từ trường ẩn
         product_id = request.form.get("product_id", "").strip().upper()
 
-        # --- Xây dựng `details` cho từng loại sự kiện ---
+        # 1. Kiểm tra quyền thực hiện hành động dựa trên vai trò
+        allowed_event_for_role = role_to_event.get(sub_role)
+        if event_type != allowed_event_for_role:
+            flash(f"❌ Vai trò '{ROLE_LABELS.get(sub_role)}' không được phép thực hiện hành động '{EVENT_TYPES.get(event_type)}'.", "danger")
+            return redirect(url_for('producer', product_id=product_id))
+
+        # 2. Kiểm tra tính hợp lệ của quy trình (state machine) cho sản phẩm đã có
+        if product_id and event_type != 'HARVEST':
+            last_block = bc.get_last_block(product_id)
+            if not last_block:
+                 flash(f"❌ Không tìm thấy sản phẩm với ID '{product_id}'.", "danger")
+                 return redirect(url_for('dashboard'))
+            
+            expected_next_event = state_transition.get(last_block.data.get("event_type"))
+            if event_type != expected_next_event:
+                flash(f"❌ Hành động không hợp lệ. Bước tiếp theo dự kiến là '{EVENT_TYPES.get(expected_next_event)}'.", "danger")
+                return redirect(url_for('producer', product_id=product_id))
+
+        # 3. Thu thập dữ liệu chi tiết từ form
+        details = {}
         if event_type == 'HARVEST':
             if not product_id:
                 date_str = datetime.now().strftime("%Y%m%d")
                 count = len(bc.get_blocks_by_event("HARVEST"))
-                product_id = f"ARB-CD-{date_str}-{count+1:03d}" # Mã mới
-            
+                product_id = f"ARB-CD-{date_str}-{count+1:03d}"
             farm_name = request.form.get('farm_name')
             coffee_variety = request.form.get('coffee_variety')
-            
             details = {
-                "product_name": f"{coffee_variety} - {farm_name}", # Tự động tạo tên sản phẩm
-                "farm_name": farm_name,
-                "coffee_variety": coffee_variety,
-                "region": request.form.get('region'),
-                "altitude": request.form.get('altitude'),
-                "planting_date": request.form.get('planting_date'),
-                "harvest_date": request.form.get('harvest_date'),
+                "product_name": f"{coffee_variety} - {farm_name}", "farm_name": farm_name, "coffee_variety": coffee_variety,
+                "region": request.form.get('region'), "altitude": request.form.get('altitude'),
+                "planting_date": request.form.get('planting_date'), "harvest_date": request.form.get('harvest_date'),
             }
         elif event_type == 'PROCESSING':
-            details = {
-                "processing_method": request.form.get('processing_method'),
-                "fermentation_time_hours": request.form.get('fermentation_time_hours'),
-                "drying_method": request.form.get('drying_method'),
-                "moisture_percentage": request.form.get('moisture_percentage'),
-                "processing_date": request.form.get('processing_date'),
-            }
+            details = { "processing_method": request.form.get('processing_method'), "fermentation_time_hours": request.form.get('fermentation_time_hours'), "drying_method": request.form.get('drying_method'), "moisture_percentage": request.form.get('moisture_percentage'), "processing_date": request.form.get('processing_date'), }
         elif event_type == 'ROASTING':
-            details = {
-                "roast_level": request.form.get('roast_level'),
-                "roast_date": request.form.get('roast_date'),
-                "roast_temperature_celsius": request.form.get('roast_temperature_celsius'),
-                "roastery_name": request.form.get('roastery_name'),
-                "packaging_date": request.form.get('packaging_date'),
-            }
+            details = { "roast_level": request.form.get('roast_level'), "roast_date": request.form.get('roast_date'), "roast_temperature_celsius": request.form.get('roast_temperature_celsius'), "roastery_name": request.form.get('roastery_name'), "packaging_date": request.form.get('packaging_date'), }
         elif event_type == 'DISTRIBUTION':
-            details = {
-                "shipment_id": request.form.get('shipment_id'),
-                "delivery_date": request.form.get('delivery_date'),
-                "warehouse_location": request.form.get('warehouse_location'),
-                "delivery_status": request.form.get('delivery_status'),
-            }
+            details = { "shipment_id": request.form.get('shipment_id'), "delivery_date": request.form.get('delivery_date'), "warehouse_location": request.form.get('warehouse_location'), "delivery_status": request.form.get('delivery_status'), }
         elif event_type == 'RETAIL':
-            details = {
-                "shop_name": request.form.get('shop_name'),
-                "receive_date": request.form.get('receive_date'),
-                "product_status": request.form.get('product_status'),
-            }
+            details = { "shop_name": request.form.get('shop_name'), "receive_date": request.form.get('receive_date'), "product_status": request.form.get('product_status'), }
 
         if not product_id:
-            flash("Vui lòng điền Product ID.", "danger")
+            flash("Lỗi: Product ID không được tạo hoặc cung cấp.", "danger")
             return redirect(url_for('producer'))
 
-        # --- Kiểm tra bằng chứng bắt buộc ---
+        # 4. Xử lý bằng chứng (file upload)
         MANDATORY_PROOF_EVENTS = ["PROCESSING", "ROASTING"]
         file = request.files.get('proof_file')
-
         if event_type in MANDATORY_PROOF_EVENTS and (not file or file.filename == ''):
             flash(f"❌ Lỗi: Giai đoạn '{EVENT_TYPES.get(event_type)}' yêu cầu phải có tệp bằng chứng.", "danger")
-            # Chuyển hướng trở lại trang producer với product_id đã nhập để không phải gõ lại
             return redirect(url_for('producer', product_id=product_id))
 
-        # Cấu trúc dữ liệu mới cho block
+        # 5. Tạo dữ liệu block và thêm vào blockchain
         new_data = {
-            "product_id": product_id,
-            "event_type": event_type,
-            "event_name": EVENT_TYPES.get(event_type, "Không rõ"),
-            "actor": session["user"],
-            "timestamp": datetime.now().isoformat(),
-            "details": {k: v for k, v in details.items() if v}, # Chỉ lưu các giá trị không rỗng
-            "proofs": [] # Sẽ được cập nhật bên dưới
+            "product_id": product_id, "event_type": event_type, "event_name": EVENT_TYPES.get(event_type, "Không rõ"),
+            "actor": user, "timestamp": datetime.now().isoformat(),
+            "details": {k: v for k, v in details.items() if v}, "proofs": []
         }
 
-        # Xử lý file upload làm bằng chứng (nếu có)
         if file and file.filename != '':
-            # Tạo tên file an toàn và độc nhất (bằng cách thêm timestamp)
             filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{secure_filename(file.filename)}"
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
             new_data['proofs'].append(filename)
 
         try:
-            block = bc.add_block(new_data)
-            flash(f"✅ Đã thêm block #{block.index} cho sản phẩm {product_id}.", "success")
-            return redirect(url_for('producer', product_id=product_id))
+            bc.add_block(new_data)
+            flash(f'✅ Thêm sự kiện "{EVENT_TYPES.get(event_type)}" cho sản phẩm {product_id} thành công!', 'success')
+            return redirect(url_for('dashboard'))
         except ValueError as e:
-            flash(f"❌ Lỗi: {e}", "danger")
+            flash(f"❌ Lỗi khi thêm block: {e}", "danger")
+            return redirect(url_for('producer', product_id=product_id))
 
-    return render_template("producer.html",
-                           allowed_event_types=allowed_event_types,
+    # --- XỬ LÝ GET REQUEST (Khi tải trang) ---
+    next_event_type = None
+    product_info = {}
+    
+    if product_id_from_url:
+        # Sản phẩm đã có -> tìm hành động tiếp theo
+        last_block = bc.get_last_block(product_id_from_url)
+        if last_block:
+            last_event_type = last_block.data.get("event_type")
+            next_event_type = state_transition.get(last_event_type)
+            # Lấy thông tin để điền sẵn vào form
+            trace = bc.get_trace(product_id_from_url)
+            for block in trace:
+                product_info.update(block.data.get("details", {}))
+            product_info['product_id'] = product_id_from_url
+        else:
+            flash(f"Không tìm thấy sản phẩm với ID {product_id_from_url}.", "warning")
+            return redirect(url_for('dashboard'))
+    else:
+        # Sản phẩm mới -> chỉ có thể là Thu hoạch
+        next_event_type = "HARVEST"
+
+    # Kiểm tra xem vai trò của người dùng có khớp với hành động tiếp theo không
+    allowed_event_for_role = role_to_event.get(sub_role)
+    current_event = None
+    if next_event_type == allowed_event_for_role:
+        current_event = next_event_type # Chỉ cho phép hành động nếu vai trò và trạng thái khớp
+        
+    return render_template('producer.html', 
+                           user=user, 
+                           product_id=product_id_from_url, 
+                           current_event=current_event,
                            event_type_labels=EVENT_TYPES,
-                           categories=CATEGORIES,
-                           form={},
-                           role_label=role_label,
-                           sub_role=sub_role,
                            product_info=product_info,
-                           user_products=user_products)
+                           sub_role=sub_role,
+                           role_label=ROLE_LABELS.get(sub_role, "Nhà sản xuất"))
 
 
 # ════════════════════════════════════════════════════════════════

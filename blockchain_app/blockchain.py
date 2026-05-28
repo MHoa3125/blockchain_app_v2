@@ -251,6 +251,25 @@ class Blockchain:
             key=lambda b: b.timestamp
         )
 
+    def get_last_block(self, product_id: str) -> 'Block' or None:
+        """Lấy block cuối cùng (mới nhất) của một sản phẩm."""
+        trace = self.get_trace(product_id)
+        return trace[-1] if trace else None
+
+    def get_all_product_ids(self) -> list[str]:
+        """
+        Lấy danh sách tất cả các product_id duy nhất từ database,
+        loại trừ 'GENESIS'.
+        """
+        try:
+            # Sử dụng `distinct` để lấy các giá trị duy nhất của trường 'data.product_id'
+            product_ids = self.collection.distinct("data.product_id")
+            # Lọc bỏ 'GENESIS' nếu có
+            return [pid for pid in product_ids if pid != 'GENESIS']
+        except Exception as e:
+            print(f"❌ Lỗi khi lấy danh sách product_id: {e}")
+            return []
+
     # ── Validate toàn bộ chain ────────────────────────────────────
     def is_valid(self):
         """
