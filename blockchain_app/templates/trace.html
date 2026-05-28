@@ -97,6 +97,23 @@
             <span class="text-muted">{{ b.data.actor }}</span>
           </div>
         </div>
+
+        <!-- Hiển thị bằng chứng -->
+        {% if b.data.proofs %}
+        <div class="mt-3 border-top pt-2">
+            <strong class="small"><i class="bi bi-paperclip"></i> Bằng chứng:</strong>
+            <ul class="list-unstyled mb-0 mt-1">
+            {% for proof in b.data.proofs %}
+                <li>
+                    <a href="{{ url_for('uploaded_file', filename=proof) }}" target="_blank" class="text-decoration-none small">
+                        <i class="bi bi-file-earmark-arrow-down"></i> {{ proof }}
+                    </a>
+                </li>
+            {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
         <div class="mt-3 small text-muted border-top pt-2">
           <strong>Hash:</strong> <code style="font-size: .8em;">{{ b.hash }}</code>
         </div>

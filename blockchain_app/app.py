@@ -1,58 +1,59 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_from_directory
 from blockchain import Blockchain
 import qrcode
 import io
 import base64
 from datetime import datetime
+from werkzeug.security import generate_password_hash, check_password_hash
+from bson.objectid import ObjectId
+import os
+from werkzeug.utils import secure_filename
+
+from bson.objectid import ObjectId
+
 
 app = Flask(__name__)
 app.secret_key = "blockchain_doAn_2026_secret"
 
+# ── Cấu hình thư mục upload ─────────────────────────────────────
+UPLOAD_FOLDER = os.path.join(app.static_folder, 'uploads')
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True) # Tự động tạo thư mục nếu chưa có
+
 # ── Khởi tạo blockchain (kết nối MongoDB) ───────────────────────
 bc = Blockchain()
+users_collection = bc.db['users'] # Collection for users
 
-# ── Tài khoản hardcode ────────────────────────────────────────────
-USERS = {
-    "nongtrai_dalat": {
-        "password": "nt123",
-        "role": "producer",
-        "sub_role": "producer"  # Vai trò phụ được gán cứng
-    },
-    "vanchuyen_hcm": {
-        "password": "vc123",
-        "role": "producer",
-        "sub_role": "transporter" # Vai trò phụ được gán cứng
-    },
-    "sieuthi_saigon": {
-        "password": "st123",
-        "role": "producer",
-        "sub_role": "retailer"    # Vai trò phụ được gán cứng
-    },
-    "consumer":    {"password": "cons123",  "role": "consumer"},
-    "admin":       {"password": "admin123", "role": "admin"},
-}
+# ── Tài khoản hardcode (ĐÃ LỖI THỜI) ───────────────────────────
+# Dữ liệu người dùng giờ được quản lý trong MongoDB collection 'users'
+# USERS = { ... }
+
 
 # -- Constants --
 # Định nghĩa các loại sự kiện và vai trò cho dễ quản lý
 EVENT_TYPES = {
-    "FARMING": "Trồng & Thu hoạch",
-    "PACKAGING": "Đóng gói & Kiểm định",
-    "TRANSPORT": "Vận chuyển",
-    "DISTRIBUTION": "Phân phối",
-    "RETAIL": "Bán lẻ / Điểm bán",
+    "HARVEST": "Thu hoạch (Nông hộ)",
+    "PROCESSING": "Sơ chế (Đơn vị sơ chế)",
+    "ROASTING": "Rang xay (Xưởng rang)",
+    "DISTRIBUTION": "Phân phối (Nhà phân phối)",
+    "RETAIL": "Bán lẻ (Quán cà phê)",
 }
 
 # Ánh xạ vai trò phụ tới các loại sự kiện được phép
 ROLE_EVENT_TYPES = {
-    "producer":    ["FARMING", "PACKAGING"],
-    "transporter": ["TRANSPORT"],
-    "retailer":    ["DISTRIBUTION", "RETAIL"],
+    "farmer":     ["HARVEST"],
+    "processor":  ["PROCESSING"],
+    "roaster":    ["ROASTING"],
+    "distributor":["DISTRIBUTION"],
+    "retailer":   ["RETAIL"],
 }
 
 ROLE_LABELS = {
-    "producer":    "Nhà sản xuất",
-    "transporter": "Vận chuyển",
-    "retailer":    "Đại lý / Bán lẻ",
+    "farmer":     "Nông hộ trồng cà phê",
+    "processor":  "Đơn vị sơ chế",
+    "roaster":    "Xưởng rang xay",
+    "distributor":"Đơn vị phân phối",
+    "retailer":   "Quán cà phê",
 }
 
 CATEGORIES = ["Rau củ", "Trái cây", "Thịt sạch", "Thủy sản", "Khác"]
@@ -98,6 +99,11 @@ def index():
     return render_template("index.html", user=session.get("user"), role=session.get("role"))
 
 
+@app.route("/about")
+def about():
+    return render_template("about.html")
+
+
 @app.route("/login/<role>", methods=["GET", "POST"])
 def login_role(role):
     # Kiểm tra xem vai trò có hợp lệ không
@@ -108,20 +114,17 @@ def login_role(role):
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "").strip()
-        
-        user_data = USERS.get(username)
-        
-        # Xác thực username, password và vai trò phải khớp với URL
-        if user_data and user_data["password"] == password and user_data["role"] == role:
-            session["user"] = username
-            session["role"] = user_data["role"]
-            
-            # Tự động gán sub_role từ dữ liệu người dùng đã được định nghĩa sẵn
-            session["sub_role"] = user_data.get("sub_role") # Lấy sub_role gán cứng
 
+        user = users_collection.find_one({"username": username})
+
+        # Xác thực username, password (đã hash) và vai trò phải khớp với URL
+        if user and check_password_hash(user["password_hash"], password) and user["role"] == role:
+            session["user"] = user["username"]
+            session["role"] = user["role"]
+            session["sub_role"] = user.get("sub_role")
 
             flash(f"Đăng nhập thành công với vai trò {role}!", "success")
-            
+
             # Chuyển hướng đến trang tương ứng
             if role == "producer":
                 return redirect(url_for("producer"))
@@ -191,45 +194,66 @@ def producer():
         product_id = request.form.get("product_id", "").strip().upper()
 
         # --- Xây dựng `details` cho từng loại sự kiện ---
-        if event_type == 'FARMING':
+        if event_type == 'HARVEST':
             if not product_id:
                 date_str = datetime.now().strftime("%Y%m%d")
-                count = len(bc.get_blocks_by_event("FARMING"))
-                product_id = f"SP{date_str}-{count+1:03d}"
+                count = len(bc.get_blocks_by_event("HARVEST"))
+                product_id = f"ARB-CD-{date_str}-{count+1:03d}" # Mã mới
+            
+            farm_name = request.form.get('farm_name')
+            coffee_variety = request.form.get('coffee_variety')
+            
             details = {
-                "product_name": request.form.get('product_name'),
-                "quantity": request.form.get('quantity'),
-                "unit": request.form.get('unit'),
-                "farm_id": request.form.get('farm_id')
+                "product_name": f"{coffee_variety} - {farm_name}", # Tự động tạo tên sản phẩm
+                "farm_name": farm_name,
+                "coffee_variety": coffee_variety,
+                "region": request.form.get('region'),
+                "altitude": request.form.get('altitude'),
+                "planting_date": request.form.get('planting_date'),
+                "harvest_date": request.form.get('harvest_date'),
             }
-        elif event_type == 'TRANSPORT':
+        elif event_type == 'PROCESSING':
             details = {
-                "vehicle_id": request.form.get('vehicle_id'),
-                "temperature_celsius": request.form.get('temperature_celsius'),
-                "departure_time": request.form.get('departure_time')
+                "processing_method": request.form.get('processing_method'),
+                "fermentation_time_hours": request.form.get('fermentation_time_hours'),
+                "drying_method": request.form.get('drying_method'),
+                "moisture_percentage": request.form.get('moisture_percentage'),
+                "processing_date": request.form.get('processing_date'),
             }
-        elif event_type == 'PACKAGING':
+        elif event_type == 'ROASTING':
             details = {
+                "roast_level": request.form.get('roast_level'),
+                "roast_date": request.form.get('roast_date'),
+                "roast_temperature_celsius": request.form.get('roast_temperature_celsius'),
+                "roastery_name": request.form.get('roastery_name'),
                 "packaging_date": request.form.get('packaging_date'),
-                "quality_certificate": request.form.get('quality_certificate'),
-                "lot_number": request.form.get('lot_number')
             }
         elif event_type == 'DISTRIBUTION':
             details = {
-                "distributor_name": request.form.get('distributor_name'),
-                "arrival_date": request.form.get('arrival_date'),
-                "storage_condition": request.form.get('storage_condition')
+                "shipment_id": request.form.get('shipment_id'),
+                "delivery_date": request.form.get('delivery_date'),
+                "warehouse_location": request.form.get('warehouse_location'),
+                "delivery_status": request.form.get('delivery_status'),
             }
         elif event_type == 'RETAIL':
             details = {
-                "shelf_date": request.form.get('shelf_date'),
-                "store_location": request.form.get('store_location'),
-                "batch_code": request.form.get('batch_code')
+                "shop_name": request.form.get('shop_name'),
+                "receive_date": request.form.get('receive_date'),
+                "product_status": request.form.get('product_status'),
             }
 
         if not product_id:
             flash("Vui lòng điền Product ID.", "danger")
             return redirect(url_for('producer'))
+
+        # --- Kiểm tra bằng chứng bắt buộc ---
+        MANDATORY_PROOF_EVENTS = ["PROCESSING", "ROASTING"]
+        file = request.files.get('proof_file')
+
+        if event_type in MANDATORY_PROOF_EVENTS and (not file or file.filename == ''):
+            flash(f"❌ Lỗi: Giai đoạn '{EVENT_TYPES.get(event_type)}' yêu cầu phải có tệp bằng chứng.", "danger")
+            # Chuyển hướng trở lại trang producer với product_id đã nhập để không phải gõ lại
+            return redirect(url_for('producer', product_id=product_id))
 
         # Cấu trúc dữ liệu mới cho block
         new_data = {
@@ -239,8 +263,15 @@ def producer():
             "actor": session["user"],
             "timestamp": datetime.now().isoformat(),
             "details": {k: v for k, v in details.items() if v}, # Chỉ lưu các giá trị không rỗng
-            "proofs": [] # Sẽ dùng để lưu link file bằng chứng
+            "proofs": [] # Sẽ được cập nhật bên dưới
         }
+
+        # Xử lý file upload làm bằng chứng (nếu có)
+        if file and file.filename != '':
+            # Tạo tên file an toàn và độc nhất (bằng cách thêm timestamp)
+            filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{secure_filename(file.filename)}"
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            new_data['proofs'].append(filename)
 
         try:
             block = bc.add_block(new_data)
@@ -298,6 +329,13 @@ def trace():
                            stages=list(EVENT_TYPES.values()))
 
 
+# ── Route để phục vụ file đã upload ───────────────────────────────
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
+
 # ════════════════════════════════════════════════════════════════
 #  ADMIN — Dashboard, Validate, Tamper
 # ════════════════════════════════════════════════════════════════
@@ -305,7 +343,89 @@ def trace():
 @login_required(role="admin")
 def admin():
     all_blocks = [b.to_dict() for b in bc.get_all_blocks()]
-    return render_template("admin.html", blocks=all_blocks)
+    users = list(users_collection.find().sort("username", 1))
+    return render_template("admin.html", blocks=all_blocks, users=users)
+
+
+# ───────────────── USER MANAGEMENT (CRUD) ──────────────────
+@app.route("/admin/users/add", methods=["GET", "POST"])
+@login_required(role="admin")
+def add_user():
+    if request.method == "POST":
+        username = request.form.get("username").strip()
+        password = request.form.get("password").strip()
+        role = request.form.get("role")
+        sub_role = request.form.get("sub_role") if role == "producer" else None
+        full_name = request.form.get("full_name").strip()
+
+        if not username or not password or not full_name:
+            flash("Vui lòng điền đầy đủ các trường bắt buộc.", "danger")
+            return render_template("user_form.html", user=request.form)
+
+        if users_collection.find_one({"username": username}):
+            flash("Tên đăng nhập đã tồn tại.", "danger")
+            return render_template("user_form.html", user=request.form)
+
+        hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
+        
+        new_user = {
+            "username": username,
+            "password_hash": hashed_password,
+            "role": role,
+            "sub_role": sub_role,
+            "full_name": full_name,
+            "created_at": datetime.now()
+        }
+        users_collection.insert_one(new_user)
+        flash(f"Đã tạo người dùng '{username}' thành công.", "success")
+        return redirect(url_for("admin"))
+
+    return render_template("user_form.html")
+
+
+@app.route("/admin/users/edit/<user_id>", methods=["GET", "POST"])
+@login_required(role="admin")
+def edit_user(user_id):
+    user = users_collection.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        flash("Không tìm thấy người dùng.", "danger")
+        return redirect(url_for("admin"))
+
+    if request.method == "POST":
+        password = request.form.get("password").strip()
+        role = request.form.get("role")
+        sub_role = request.form.get("sub_role") if role == "producer" else None
+        full_name = request.form.get("full_name").strip()
+
+        update_data = {
+            "role": role,
+            "sub_role": sub_role,
+            "full_name": full_name
+        }
+
+        if password:
+            update_data["password_hash"] = generate_password_hash(password, method='pbkdf2:sha256')
+
+        users_collection.update_one({"_id": ObjectId(user_id)}, {"$set": update_data})
+        flash(f"Đã cập nhật người dùng '{user['username']}'.", "success")
+        return redirect(url_for("admin"))
+
+    return render_template("user_form.html", user=user)
+
+
+@app.route("/admin/users/delete/<user_id>", methods=["POST"])
+@login_required(role="admin")
+def delete_user(user_id):
+    user_to_delete = users_collection.find_one({"_id": ObjectId(user_id)})
+    
+    # Prevent admin from deleting themselves
+    if user_to_delete and user_to_delete["username"] == session.get("user"):
+        flash("Bạn không thể xóa chính mình.", "danger")
+        return redirect(url_for("admin"))
+
+    users_collection.delete_one({"_id": ObjectId(user_id)})
+    flash("Đã xóa người dùng.", "success")
+    return redirect(url_for("admin"))
 
 
 @app.route("/admin/validate")
@@ -326,56 +446,46 @@ def tamper():
     ═══════════════════════════════════════════════════════════════
     """
     index = int(request.form.get("index", 1))
-    try:
-        bc.tamper_block(index, "location", f"[TAMPERED] - Dữ liệu bị sửa lúc {datetime.now().strftime('%H:%M:%S')}")
-        flash(f"⚠️ Đã tamper block #{index}. Chạy Validate để kiểm tra.", "warning")
-    except ValueError as e:
-        flash(f"Lỗi tamper: {e}", "danger")
+    if index > 0:
+        bc.tamper(index)
+        flash(f"Block {index} đã bị thay đổi. Hãy kiểm tra lại chuỗi.", "warning")
     return redirect(url_for("admin"))
 
-
-@app.route("/admin/reset_chain", methods=["POST"])
+@app.route("/admin/reset", methods=["POST"])
 @login_required(role="admin")
 def reset_chain():
-    """Xóa chain trong database và tạo lại genesis block — dùng khi muốn demo từ đầu."""
-    global bc
-    try:
-        # Gọi hàm reset mới trong lớp Blockchain để xóa collection trong DB
-        bc.reset_chain_in_db()
-
-        # Khởi tạo lại đối tượng blockchain để nạp lại genesis block mới vào bộ nhớ
-        bc = Blockchain()
-
-        flash("✅ Đã reset chain trong database về genesis block.", "success")
-    except Exception as e:
-        flash(f"❌ Có lỗi xảy ra khi reset chain: {e}", "danger")
+    """
+    Xóa toàn bộ blockchain.
+    """
+    bc.delete_all_blocks()
+    flash("✅ Toàn bộ blockchain đã được xóa sạch!", "success")
     return redirect(url_for("admin"))
 
-
-# ════════════════════════════════════════════════════════════════
-#  QR SCAN — Để sau
-# ════════════════════════════════════════════════════════════════
-@app.route("/scan")
-@login_required(role="consumer")
-def scan():
+# =================== ONE-TIME ADMIN CREATION ===================
+@app.route("/create-admin")
+def create_admin():
     """
-    ███████████████████████████████████████████████████████████████
-    ██                                                           ██
-    ██   TÍNH NĂNG QUÉT MÃ QR — CHƯA TRIỂN KHAI                  ██
-    ██                                                           ██
-    ██   Cần HTTPS để trình duyệt cho phép truy cập camera.      ██
-    ██   Bước tiếp theo sau khi deploy lên Render.com:           ██
-    ██                                                           ██
-    ██   1. Thêm html5-qrcode vào templates/scan.html            ██
-    ██   2. Dùng Html5QrcodeScanner để scan QR                   ██
-    ██   3. Khi scan xong, redirect đến /trace?product_id=xxx    ██
-    ██   4. Đổi make_qr_base64() để encode URL thay vì text      ██
-    ██                                                           ██
-    ███████████████████████████████████████████████████████████████
+    Chạy route này một lần để tạo người dùng quản trị ban đầu.
+    Vì lý do bảo mật, route này nên được xóa sau lần chạy đầu tiên.
     """
-    return render_template("scan_todo.html")
+    # Kiểm tra xem quản trị viên đã tồn tại chưa
+    if users_collection.find_one({"username": "quantrivien"}):
+        return "Tài khoản quản trị viên đã tồn tại."
 
+    # Hash the password
+    hashed_password = generate_password_hash("quantri123", method='pbkdf2:sha256')
 
-# ════════════════════════════════════════════════════════════════
+    # Tạo người dùng quản trị
+    users_collection.insert_one({
+        "username": "quantrivien",
+        "password_hash": hashed_password,
+        "role": "admin",
+        "full_name": "Quản Trị Viên",
+        "created_at": datetime.now()
+    })
+
+    return "Tài khoản quản trị viên 'quantrivien' đã được tạo thành công!"
+# ===============================================================
+
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(debug=True, host='0.0.0.0')

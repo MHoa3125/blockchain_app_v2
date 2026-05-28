@@ -1,66 +1,70 @@
 {% extends "base.html" %}
-{% block title %}Trang chủ — Blockchain Truy Xuất{% endblock %}
+{% block title %}Truy xuất nguồn gốc - Hộ chiếu số Cà phê Arabica Cầu Đất{% endblock %}
+
+{% block extra_css %}
+<style>
+  .hero-section {
+    /* Sửa lại đường dẫn ảnh bằng url_for */
+    background: url("{{ url_for('static', filename='images/banner.jpg') }}") no-repeat center center;
+    background-size: cover;
+    padding: 8rem 0;
+    color: white;
+    text-shadow: 2px 2px 8px rgba(0,0,0,0.7);
+  }
+  .search-form {
+    max-width: 600px;
+    margin: -40px auto 0 auto;
+    position: relative;
+    z-index: 10;
+    background: white;
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  }
+  .how-it-works-icon {
+    font-size: 3rem;
+    color: var(--navy);
+  }
+</style>
+{% endblock %}
 
 {% block content %}
-<!-- Hero -->
-<div class="p-5 mb-4 rounded-4 text-white" style="background: linear-gradient(135deg, #1F3864 0%, #2E75B6 100%);">
-  <h1 class="fw-bold"><i class="bi bi-box-seam me-2"></i>Blockchain Truy Xuất Nguồn Gốc</h1>
-  <p class="lead mb-0">Hệ thống quản lý chuỗi cung ứng thực phẩm sạch — minh bạch, bất biến, đáng tin cậy.</p>
-</div>
-
-<!-- 2 Role Cards -->
-<div class="row g-4">
-  <div class="col-md-6">
-    <div class="card h-100">
-      <div class="card-header-navy p-4">
-        <i class="bi bi-person-gear fs-2"></i>
-        <h5 class="mt-2 mb-0">Producer</h5>
-        <small>Nhà sản xuất / Vận chuyển / Đại lý</small>
-      </div>
-      <div class="card-body">
-        <p class="text-muted small">Đăng nhập để thêm sự kiện chuỗi cung ứng — mỗi giai đoạn tạo 1 block mới trên blockchain.</p>
-        <ul class="list-unstyled small text-muted">
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Tạo lô hàng mới (giai đoạn 1)</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Thêm giai đoạn tiếp theo (2–5)</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Xem QR code sản phẩm</li>
-        </ul>
-      </div>
-      <div class="card-footer bg-white border-0 pb-4 px-4">
-        <a href="{{ url_for('login_role', role='producer') }}" class="btn btn-dark w-100">
-          <i class="bi bi-box-arrow-in-right me-1"></i>Đăng nhập Producer
-        </a>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-md-6">
-    <div class="card h-100">
-      <div class="card-header-blue p-4">
-        <i class="bi bi-search fs-2"></i>
-        <h5 class="mt-2 mb-0">Consumer</h5>
-        <small>Người tiêu dùng</small>
-      </div>
-      <div class="card-body">
-        <p class="text-muted small">Tra cứu hành trình sản phẩm từ trang trại đến điểm bán — nhập mã sản phẩm để xem toàn bộ lịch sử.</p>
-        <ul class="list-unstyled small text-muted">
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Tra cứu bằng Product ID</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Xem timeline hành trình</li>
-          <li>
-            <i class="bi bi-qr-code text-success me-2"></i>Xem QR code sản phẩm
-          </li>
-        </ul>
-      </div>
-      <div class="card-footer bg-white border-0 pb-4 px-4">
-        <a href="{{ url_for('login_role', role='consumer') }}" class="btn w-100" style="background:#2E75B6;color:#fff;">
-          <i class="bi bi-box-arrow-in-right me-1"></i>Đăng nhập Consumer
-        </a>
-      </div>
-    </div>
+<!-- Hero Section -->
+<div class="hero-section text-center rounded-4">
+  <div class="container">
+    <h1 class="display-4 fw-bold">TRUY XUẤT NGUỒN GỐC SẢN PHẨM</h1>
+    <p class="lead">Khám phá hành trình minh bạch của hạt cà phê Arabica Cầu Đất, từ nông trại đến ly của bạn.</p>
   </div>
 </div>
 
-<div class="text-center mt-4">
-    <a href="{{ url_for('login_role', role='admin') }}" class="text-muted small">Admin Login</a>
+<!-- Search Form -->
+<div class="search-form">
+  <h4 class="text-center mb-3" style="color: var(--navy);">MÃ TRUY XUẤT</h4>
+  <form action="{{ url_for('trace') }}" method="GET" class="d-flex">
+    <input type="text" name="product_id" class="form-control form-control-lg me-2" placeholder="Nhập mã lô hàng..." required>
+    <button type="submit" class="btn btn-primary" style="background-color: var(--navy); border-color: var(--navy);"><i class="bi bi-search"></i></button>
+  </form>
+</div>
+
+<!-- How it works -->
+<div class="container mt-5 pt-5">
+  <div class="row text-center g-4">
+    <div class="col-md-4">
+      <i class="bi bi-qr-code-scan how-it-works-icon mb-3"></i>
+      <h5>Bước 1: Tìm mã QR</h5>
+      <p class="text-muted">Tìm mã QR Code hoặc mã số được in trên bao bì sản phẩm cà phê.</p>
+    </div>
+    <div class="col-md-4">
+      <i class="bi bi-keyboard how-it-works-icon mb-3"></i>
+      <h5>Bước 2: Nhập mã</h5>
+      <p class="text-muted">Nhập mã số vào ô "Mã truy xuất" ở trên hoặc quét mã QR bằng điện thoại.</p>
+    </div>
+    <div class="col-md-4">
+      <i class="bi bi-card-list how-it-works-icon mb-3"></i>
+      <h5>Bước 3: Khám phá</h5>
+      <p class="text-muted">Xem toàn bộ "hộ chiếu" chi tiết về hành trình của lô cà phê bạn đang cầm trên tay.</p>
+    </div>
+  </div>
 </div>
 
 {% endblock %}

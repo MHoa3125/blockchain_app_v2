@@ -25,7 +25,7 @@
         </form>
 
         <!-- 2. FORM THÊM BLOCK -->
-        <form method="POST" action="{{ url_for('producer') }}">
+        <form method="POST" action="{{ url_for('producer') }}" enctype="multipart/form-data">
           <!-- Product ID sẽ được thêm vào đây bằng JS nếu đang cập nhật -->
           <div id="product-id-form-container"></div>
 
@@ -66,6 +66,13 @@
             <!-- JS sẽ render các khối form vào đây -->
           </div>
 
+          <!-- Trường upload file bằng chứng -->
+          <div id="proof-upload-container" class="mt-3 border-top pt-4" style="display: none;">
+              <label for="proof_file" class="form-label fw-semibold">Tệp bằng chứng <span id="proof-label-modifier" class="text-muted">(Tùy chọn)</span></label>
+              <input class="form-control" type="file" id="proof_file" name="proof_file">
+              <div class="form-text">Đính kèm hình ảnh, tài liệu (PDF, Word),... làm bằng chứng.</div>
+          </div>
+
           <!-- Nút submit -->
           <button id="submit-button" type="submit" class="btn btn-dark px-4 mt-3" style="display: none;">
             <i class="bi bi-plus-lg me-2"></i> Thêm Block vào chuỗi
@@ -79,7 +86,38 @@
   <!-- Cột phụ (5/12) -->
   <div class="col-lg-5">
     {% include 'includes/result_card.html' %}
-    {% include 'includes/permissions_guide.html' %}
+    <div class="card">
+      <div class="card-header-navy p-3 ps-4">
+        <i class="bi bi-shield-check me-2"></i>Phân Quyền Giai Đoạn
+      </div>
+      <div class="card-body p-4">
+        <p class="card-text small text-muted">
+          Tài khoản của bạn được cấp quyền thêm các sự kiện tương ứng với vai trò của mình trong chuỗi cung ứng.
+        </p>
+        <ul class="list-unstyled">
+          <li class="mb-2">
+            <span class="badge bg-success-subtle text-success-emphasis rounded-pill me-2">🌱</span>
+            <strong>Nông hộ:</strong> Thu hoạch
+          </li>
+          <li class="mb-2">
+            <span class="badge bg-secondary-subtle text-secondary-emphasis rounded-pill me-2">⚙️</span>
+            <strong>Sơ chế:</strong> Xử lý sau thu hoạch
+          </li>
+          <li class="mb-2">
+            <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill me-2">🔥</span>
+            <strong>Xưởng rang:</strong> Rang & Đóng gói
+          </li>
+          <li class="mb-2">
+            <span class="badge bg-info-subtle text-info-emphasis rounded-pill me-2">🚚</span>
+            <strong>Phân phối:</strong> Vận chuyển
+          </li>
+          <li class="mb-2">
+            <span class="badge bg-primary-subtle text-primary-emphasis rounded-pill me-2">🏪</span>
+            <strong>Bán lẻ:</strong> Nhận hàng & Bán
+          </li>
+        </ul>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -92,46 +130,54 @@ document.addEventListener("DOMContentLoaded", function() {
   const dynamicFieldsContainer = document.getElementById('dynamic-fields-container');
   const submitButton = document.getElementById('submit-button');
   const productIdFormContainer = document.getElementById('product-id-form-container');
+  const proofUploadContainer = document.getElementById('proof-upload-container');
 
   const productInfo = {{ product_info | tojson }};
   const isUpdateMode = productInfo && Object.keys(productInfo).length > 0 && productInfo.product_id;
 
   // Cấu trúc định nghĩa các trường cho từng loại sự kiện
   const EVENT_DEFINITIONS = {
-    "FARMING": {
+    "HARVEST": {
       fields: [
-        { name: "product_name", label: "Tên sản phẩm", required: true, placeholder: "VD: Cà phê Robusta" },
-        { name: "quantity", label: "Sản lượng", required: true, placeholder: "VD: 1000" },
-        { name: "unit", label: "Đơn vị", required: true, placeholder: "VD: kg" },
-        { name: "farm_id", label: "Mã số nông trại", required: true, placeholder: "VD: NT-DL-0123" }
+        { name: "farm_name", label: "Tên nông trại", required: true, placeholder: "VD: Green Farm Cầu Đất" },
+        { name: "coffee_variety", label: "Giống cà phê", required: true, placeholder: "VD: Arabica Typica" },
+        { name: "region", label: "Khu vực", required: true, placeholder: "VD: Cầu Đất – Đà Lạt" },
+        { name: "altitude", label: "Độ cao (mét)", type: "number", required: true, placeholder: "VD: 1500" },
+        { name: "planting_date", label: "Ngày trồng", type: "date" },
+        { name: "harvest_date", label: "Ngày thu hoạch", type: "date", required: true },
       ]
     },
-    "TRANSPORT": {
+    "PROCESSING": {
       fields: [
-        { name: "vehicle_id", label: "Mã số phương tiện", required: true, placeholder: "VD: 51F-123.45" },
-        { name: "temperature_celsius", label: "Nhiệt độ (°C)", type: "number", required: true, placeholder: "VD: 4" },
-        { name: "departure_time", label: "Thời gian khởi hành", type: "datetime-local", required: true }
+        { name: "processing_method", label: "Phương pháp sơ chế", required: true, type: "select", options: ["Washed (Ướt)", "Honey (Mật ong)", "Natural (Khô)"] },
+        { name: "fermentation_time_hours", label: "Thời gian lên men (giờ)", type: "number", placeholder: "VD: 24" },
+        { name: "drying_method", label: "Phương pháp phơi/sấy", placeholder: "VD: Phơi trên giàn, sấy máy" },
+        { name: "moisture_percentage", label: "Độ ẩm (%)", type: "number", placeholder: "VD: 12" },
+        { name: "processing_date", label: "Ngày sơ chế", type: "date", required: true },
       ]
     },
-    "PACKAGING": {
+    "ROASTING": {
       fields: [
+        { name: "roastery_name", label: "Tên xưởng rang", required: true, placeholder: "VD: Dalat Roastery" },
+        { name: "roast_level", label: "Mức độ rang", required: true, type: "select", options: ["Light", "Medium", "Dark"] },
+        { name: "roast_date", label: "Ngày rang", type: "date", required: true },
+        { name: "roast_temperature_celsius", label: "Nhiệt độ rang (°C)", type: "number", placeholder: "VD: 200" },
         { name: "packaging_date", label: "Ngày đóng gói", type: "date", required: true },
-        { name: "quality_certificate", label: "Chứng nhận chất lượng", placeholder: "VD: VietGAP, GlobalGAP" },
-        { name: "lot_number", label: "Mã số lô", required: true, placeholder: "VD: LOH-2026-05-001" }
       ]
     },
     "DISTRIBUTION": {
       fields: [
-        { name: "distributor_name", label: "Tên nhà phân phối", required: true, placeholder: "VD: Công ty TNHH Phân phối Toàn Cầu" },
-        { name: "arrival_date", label: "Ngày hàng đến", type: "date", required: true },
-        { name: "storage_condition", label: "Điều kiện bảo quản", placeholder: "VD: Nơi khô ráo, thoáng mát" }
+        { name: "shipment_id", label: "Mã lô hàng vận chuyển", required: true, placeholder: "VD: SHIP-001" },
+        { name: "warehouse_location", label: "Kho bãi", placeholder: "VD: HCM Distribution Center" },
+        { name: "delivery_date", label: "Ngày giao hàng", type: "date", required: true },
+        { name: "delivery_status", label: "Tình trạng", type: "select", options: ["Đang vận chuyển", "Đã giao hàng"] },
       ]
     },
     "RETAIL": {
       fields: [
-        { name: "shelf_date", label: "Ngày lên kệ", type: "date", required: true },
-        { name: "store_location", label: "Địa điểm bán", required: true, placeholder: "VD: Siêu thị CoopMart, 123 Nguyễn Huệ" },
-        { name: "batch_code", label: "Mã lô hàng bán lẻ", placeholder: "VD: BATCH-SGN-0526-A" }
+        { name: "shop_name", label: "Tên quán cà phê", required: true, placeholder: "VD: Origin Coffee" },
+        { name: "receive_date", label: "Ngày nhận hàng", type: "date", required: true },
+        { name: "product_status", label: "Tình trạng sản phẩm", type: "select", options: ["Sẵn sàng để bán", "Đã bán hết"] },
       ]
     }
   };
@@ -140,7 +186,7 @@ document.addEventListener("DOMContentLoaded", function() {
   // CÁC HÀM TIỆN ÍCH
   // ===================================================================
   /**
-   * Tạo HTML cho các trường nhập liệu.
+   * Tạo HTML cho các trường nhập liệu, bao gồm cả select.
    */
   function generateFieldsHtml(fields) {
     let html = '<div class="row g-3 mt-2 border-top pt-4">';
@@ -150,10 +196,22 @@ document.addEventListener("DOMContentLoaded", function() {
       const value = productInfo[field.name] || ''; // Tự động điền thông tin đã có
 
       html += `<div class="col-md-6 mb-2">
-                 <label for="${field.name}" class="form-label fw-semibold">${field.label}${requiredStar}</label>
-                 <input type="${field.type || 'text'}" name="${field.name}" id="${field.name}"
-                        class="form-control" placeholder="${field.placeholder || ''}" value="${value}" ${requiredAttr}>
-               </div>`;
+                 <label for="${field.name}" class="form-label fw-semibold">${field.label}${requiredStar}</label>`;
+
+      if (field.type === 'select') {
+        html += `<select name="${field.name}" id="${field.name}" class="form-select" ${requiredAttr}>`;
+        html += `<option value="">-- Chọn ${field.label} --</option>`;
+        field.options.forEach(option => {
+          const selected = (value === option) ? 'selected' : '';
+          html += `<option value="${option}" ${selected}>${option}</option>`;
+        });
+        html += `</select>`;
+      } else {
+        html += `<input type="${field.type || 'text'}" name="${field.name}" id="${field.name}"
+                        class="form-control" placeholder="${field.placeholder || ''}" value="${value}" ${requiredAttr}>`;
+      }
+
+      html += `</div>`;
     });
     html += '</div>';
     return html;
@@ -168,13 +226,32 @@ document.addEventListener("DOMContentLoaded", function() {
     const selectedEventType = this.value;
     dynamicFieldsContainer.innerHTML = "";
     submitButton.style.display = 'none';
+    proofUploadContainer.style.display = 'none';
 
     if (selectedEventType && EVENT_DEFINITIONS[selectedEventType]) {
       const fields = EVENT_DEFINITIONS[selectedEventType].fields;
       dynamicFieldsContainer.innerHTML = generateFieldsHtml(fields);
       submitButton.style.display = 'block';
+      proofUploadContainer.style.display = 'block';
+
+      // Cập nhật nhãn bằng chứng
+      updateProofLabel(selectedEventType);
     }
   });
+
+  /**
+   * Cập nhật nhãn cho trường tải lên bằng chứng.
+   */
+  function updateProofLabel(eventType) {
+    const proofLabelModifier = document.getElementById('proof-label-modifier');
+    const mandatoryEvents = ["PROCESSING", "ROASTING"];
+
+    if (mandatoryEvents.includes(eventType)) {
+      proofLabelModifier.innerHTML = '<span class="text-danger">(Bắt buộc *)</span>';
+    } else {
+      proofLabelModifier.innerHTML = '<span class="text-muted">(Tùy chọn)</span>';
+    }
+  }
 
   // 2. Nếu đang ở chế độ cập nhật, thêm product_id vào form
   if (isUpdateMode) {

@@ -208,12 +208,12 @@ class Blockchain:
         """
         product_id = data.get("product_id")
         event_type = data.get("event_type") # Đã đổi từ 'event' sang 'event_type'
-        is_genesis_event = (event_type == "FARMING")
+        is_genesis_event = (event_type == "HARVEST")
 
         if not product_id:
             raise ValueError("Product ID là bắt buộc.")
 
-        # Nếu đây là sự kiện tạo sản phẩm (FARMING)
+        # Nếu đây là sự kiện tạo sản phẩm (HARVEST)
         if is_genesis_event:
             # Kiểm tra xem ID này đã được dùng chưa
             if self.get_trace(product_id):
@@ -236,13 +236,13 @@ class Blockchain:
         return new_block
 
     # ── Tra cứu theo product_id, event, actor ───────────────────
-    def get_blocks_by_event(self, event: str) -> list['Block']:
-        """Lấy tất cả các block có một sự kiện (event) cụ thể."""
-        return [b for b in self.chain if b.data.get("event") == event]
+    def get_blocks_by_event(self, event_type: str) -> list['Block']:
+        """Lấy tất cả các block có một loại sự kiện (event_type) cụ thể."""
+        return [b for b in self.chain if b.data.get("event_type") == event_type]
 
-    def get_blocks_by_event_and_actor(self, event: str, actor: str) -> list['Block']:
-        """Lấy tất cả các block có sự kiện và người tạo (actor) cụ thể."""
-        return [b for b in self.chain if b.data.get("event") == event and b.data.get("actor") == actor]
+    def get_blocks_by_event_and_actor(self, event_type: str, actor: str) -> list['Block']:
+        """Lấy tất cả các block có loại sự kiện và người tạo (actor) cụ thể."""
+        return [b for b in self.chain if b.data.get("event_type") == event_type and b.data.get("actor") == actor]
 
     def get_trace(self, product_id: str) -> list['Block']:
         """Lấy tất cả các block liên quan đến một product_id, sắp xếp theo thời gian."""
@@ -295,6 +295,14 @@ class Blockchain:
         return self.chain
 
     # ── Reset toàn bộ DB ────────────────────────────────────────
+    def delete_all_blocks(self):
+        """Xóa tất cả các block trong DB và tải lại chain (tạo lại genesis)."""
+        print("🔥 Đang xóa tất cả block trong database...")
+        self.collection.delete_many({})
+        self.chain = [] # Xóa chain trong bộ nhớ
+        self._create_genesis_block() # Tạo lại genesis block
+        print("✅ Đã reset blockchain và tạo lại genesis block.")
+
     def reset_chain_in_db(self):
         """Xóa tất cả các block trong DB và tạo lại genesis block."""
         print("🔥 Đang xóa tất cả block trong database...")
