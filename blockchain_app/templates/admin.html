@@ -44,10 +44,6 @@
   <!-- Blockchain Tab Pane -->
   <div class="tab-pane fade show active" id="blockchain" role="tabpanel" aria-labelledby="blockchain-tab">
     <div class="d-flex gap-2 flex-wrap mb-4">
-      <!-- Validate button -->
-      <button class="btn btn-success" onclick="validateChain()">
-        <i class="bi bi-check-circle me-2"></i>Validate Chain
-      </button>
       <!-- Reset -->
       <form method="POST" action="{{ url_for('reset_chain') }}"
             onsubmit="return confirm('Reset toàn bộ chain về genesis? Không thể hoàn tác!')">
@@ -137,15 +133,7 @@
 
             <!-- Tamper button (không phải genesis) -->
             {% if b.index > 0 %}
-            <div class="mt-2">
-              <form method="POST" action="{{ url_for('tamper') }}"
-                    onsubmit="return confirm('Tamper block #{{ b.index }}? Dùng để demo tính bất biến.')">
-                <input type="hidden" name="index" value="{{ b.index }}">
-                <button type="submit" class="btn btn-sm btn-outline-danger">
-                  <i class="bi bi-pencil-fill me-1"></i>Tamper Block này
-                </button>
-              </form>
-            </div>
+            
             {% endif %}
 
           </div>
@@ -221,25 +209,6 @@
 
 {% block extra_js %}
 <script>
-function validateChain() {
-  fetch("{{ url_for('validate') }}")
-    .then(r => r.json())
-    .then(data => {
-      const el   = document.getElementById('validateResult');
-      const icon = document.getElementById('validateIcon');
-      const msg  = document.getElementById('validateMsg');
-      el.style.display = 'block';
-      if (data.valid) {
-        el.className = 'alert alert-success mb-4';
-        icon.className = 'bi bi-check-circle-fill me-2';
-        msg.textContent = '✅  ' + data.message;
-      } else {
-        el.className = 'alert alert-danger mb-4';
-        icon.className = 'bi bi-x-circle-fill me-2';
-        msg.textContent = '❌  ' + data.message;
-      }
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-}
+// The validateChain function has been removed as the 'validate' endpoint is no longer available.
 </script>
 {% endblock %}

@@ -106,8 +106,18 @@ def about():
 
 @app.route("/login/<role>", methods=["GET", "POST"])
 def login_role(role):
-    # Kiểm tra xem vai trò có hợp lệ không
-    if role not in ["producer", "consumer", "admin"]:
+    """
+    Xử lý đăng nhập cho tất cả các vai trò, bao gồm cả vai trò chính và phụ.
+    - 'role' từ URL có thể là 'admin', 'consumer', hoặc một vai trò phụ như 'farmer', 'roaster',...
+    """
+    # Xác định vai trò chính (main_role) dựa trên 'role' từ URL.
+    # Nếu 'role' là một trong các vai trò phụ, main_role sẽ là 'producer'.
+    # Ngược lại, main_role chính là 'role' đó (ví dụ: 'admin', 'consumer').
+    sub_roles_list = list(ROLE_LABELS.keys())
+    main_role_expected = "producer" if role in sub_roles_list else role
+
+    # Chỉ cho phép các vai trò hợp lệ
+    if main_role_expected not in ["producer", "consumer", "admin"]:
         flash("Vai trò không hợp lệ.", "danger")
         return redirect(url_for("index"))
 
@@ -115,27 +125,44 @@ def login_role(role):
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "").strip()
 
-        user = users_collection.find_one({"username": username})
+        # 1. Tìm người dùng trong DB và kiểm tra mật khẩu
+        user_from_db = users_collection.find_one({"username": username})
+        if not user_from_db or not check_password_hash(user_from_db.get("password_hash", ""), password):
+            flash("❌ Sai tên đăng nhập hoặc mật khẩu.", "danger")
+            return render_template("login.html", role=role, role_labels=ROLE_LABELS)
 
-        # Xác thực username, password (đã hash) và vai trò phải khớp với URL
-        if user and check_password_hash(user["password_hash"], password) and user["role"] == role:
-            session["user"] = user["username"]
-            session["role"] = user["role"]
-            session["sub_role"] = user.get("sub_role")
+        # 2. Kiểm tra vai trò chính (main_role)
+        user_main_role = user_from_db.get("role")
+        if user_main_role != main_role_expected:
+            flash(f"❌ Đăng nhập thất bại. Tài khoản này có vai trò '{user_main_role}', không thể đăng nhập vào trang dành cho '{main_role_expected}'.", "danger")
+            return render_template("login.html", role=role, role_labels=ROLE_LABELS)
 
-            flash(f"Đăng nhập thành công với vai trò {role}!", "success")
+        # 3. Nếu là producer, kiểm tra thêm vai trò phụ (sub_role)
+        if main_role_expected == "producer":
+            user_sub_role = user_from_db.get("sub_role")
+            if user_sub_role != role:
+                expected_role_label = ROLE_LABELS.get(role, role)
+                actual_role_label = ROLE_LABELS.get(user_sub_role, user_sub_role)
+                flash(f"❌ Đăng nhập thất bại. Bạn đang cố đăng nhập vào trang của '{expected_role_label}', nhưng tài khoản này được cấp quyền cho vai trò '{actual_role_label}'.", "danger")
+                return render_template("login.html", role=role, role_labels=ROLE_LABELS)
 
-            # Chuyển hướng đến trang tương ứng
-            if role == "producer":
-                return redirect(url_for("dashboard")) # Chuyển hướng producer tới dashboard mới
-            elif role == "admin":
-                return redirect(url_for("admin"))
-            else: # consumer
-                return redirect(url_for("trace"))
-        
-        flash("Sai tài khoản, mật khẩu hoặc vai trò không đúng.", "danger")
+        # 4. Đăng nhập thành công
+        session["user"] = user_from_db["username"]
+        session["role"] = user_from_db["role"]
+        session["sub_role"] = user_from_db.get("sub_role")
 
-    # Render template với vai trò tương ứng cho GET request
+        display_role = ROLE_LABELS.get(session["sub_role"], session["role"])
+        flash(f"✅ Đăng nhập thành công với vai trò {display_role}!", "success")
+
+        # Chuyển hướng
+        if user_main_role == "producer":
+            return redirect(url_for("dashboard"))
+        elif user_main_role == "admin":
+            return redirect(url_for("admin"))
+        else:  # consumer
+            return redirect(url_for("trace"))
+
+    # Đối với GET request, chỉ cần render template
     return render_template("login.html", role=role, role_labels=ROLE_LABELS)
 
 
@@ -206,36 +233,39 @@ def producer():
     product_id_from_url = request.args.get('product_id')
     
     # --- Định nghĩa Máy trạng thái (State Machine) ---
-    # 1. Ánh xạ vai trò tới hành động họ có thể thực hiện
     role_to_event = {
-        "farmer": "HARVEST",
-        "processor": "PROCESSING",
-        "roaster": "ROASTING",
-        "distributor": "DISTRIBUTION",
-        "retailer": "RETAIL",
+        "farmer": "HARVEST", "processor": "PROCESSING", "roaster": "ROASTING",
+        "distributor": "DISTRIBUTION", "retailer": "RETAIL",
     }
-
-    # 2. Ánh xạ trạng thái hiện tại -> trạng thái tiếp theo
     state_transition = {
-        "HARVEST": "PROCESSING",
-        "PROCESSING": "ROASTING",
-        "ROASTING": "DISTRIBUTION",
+        "HARVEST": "PROCESSING", "PROCESSING": "ROASTING", "ROASTING": "DISTRIBUTION",
         "DISTRIBUTION": "RETAIL",
     }
 
     # --- XỬ LÝ POST REQUEST (Khi người dùng gửi form) ---
     if request.method == 'POST':
-        event_type = request.form.get('event_type') # Lấy từ trường ẩn
-        product_id = request.form.get("product_id", "").strip().upper()
+        event_type = request.form.get('event_type')
 
-        # 1. Kiểm tra quyền thực hiện hành động dựa trên vai trò
+        # --- Logic tạo/lấy Product ID (ĐÃ SỬA LỖI) ---
+        product_id = None
+        if event_type == 'HARVEST':
+            date_str = datetime.now().strftime("%Y%m%d")
+            count = len(bc.get_blocks_by_event("HARVEST"))
+            product_id = f"ARB-CD-{date_str}-{count+1:03d}"
+        else:
+            product_id = request.form.get("product_id", "").strip().upper()
+            if not product_id:
+                flash("❌ Lỗi: Không có ID sản phẩm để thực hiện hành động này.", "danger")
+                return redirect(url_for('dashboard'))
+
+        # 1. Kiểm tra quyền thực hiện hành động
         allowed_event_for_role = role_to_event.get(sub_role)
         if event_type != allowed_event_for_role:
             flash(f"❌ Vai trò '{ROLE_LABELS.get(sub_role)}' không được phép thực hiện hành động '{EVENT_TYPES.get(event_type)}'.", "danger")
             return redirect(url_for('producer', product_id=product_id))
 
-        # 2. Kiểm tra tính hợp lệ của quy trình (state machine) cho sản phẩm đã có
-        if product_id and event_type != 'HARVEST':
+        # 2. Kiểm tra tính hợp lệ của quy trình
+        if event_type != 'HARVEST':
             last_block = bc.get_last_block(product_id)
             if not last_block:
                  flash(f"❌ Không tìm thấy sản phẩm với ID '{product_id}'.", "danger")
@@ -249,10 +279,6 @@ def producer():
         # 3. Thu thập dữ liệu chi tiết từ form
         details = {}
         if event_type == 'HARVEST':
-            if not product_id:
-                date_str = datetime.now().strftime("%Y%m%d")
-                count = len(bc.get_blocks_by_event("HARVEST"))
-                product_id = f"ARB-CD-{date_str}-{count+1:03d}"
             farm_name = request.form.get('farm_name')
             coffee_variety = request.form.get('coffee_variety')
             details = {
@@ -268,10 +294,6 @@ def producer():
             details = { "shipment_id": request.form.get('shipment_id'), "delivery_date": request.form.get('delivery_date'), "warehouse_location": request.form.get('warehouse_location'), "delivery_status": request.form.get('delivery_status'), }
         elif event_type == 'RETAIL':
             details = { "shop_name": request.form.get('shop_name'), "receive_date": request.form.get('receive_date'), "product_status": request.form.get('product_status'), }
-
-        if not product_id:
-            flash("Lỗi: Product ID không được tạo hoặc cung cấp.", "danger")
-            return redirect(url_for('producer'))
 
         # 4. Xử lý bằng chứng (file upload)
         MANDATORY_PROOF_EVENTS = ["PROCESSING", "ROASTING"]
@@ -293,7 +315,7 @@ def producer():
             new_data['proofs'].append(filename)
 
         try:
-            bc.add_block(new_data)
+            bc.add_block(new_data, actor_sub_role=sub_role)
             flash(f'✅ Thêm sự kiện "{EVENT_TYPES.get(event_type)}" cho sản phẩm {product_id} thành công!', 'success')
             return redirect(url_for('dashboard'))
         except ValueError as e:
@@ -305,28 +327,35 @@ def producer():
     product_info = {}
     
     if product_id_from_url:
-        # Sản phẩm đã có -> tìm hành động tiếp theo
         last_block = bc.get_last_block(product_id_from_url)
         if last_block:
             last_event_type = last_block.data.get("event_type")
             next_event_type = state_transition.get(last_event_type)
-            # Lấy thông tin để điền sẵn vào form
             trace = bc.get_trace(product_id_from_url)
             for block in trace:
                 product_info.update(block.data.get("details", {}))
-            product_info['product_id'] = product_id_from_url
         else:
             flash(f"Không tìm thấy sản phẩm với ID {product_id_from_url}.", "warning")
             return redirect(url_for('dashboard'))
     else:
-        # Sản phẩm mới -> chỉ có thể là Thu hoạch
         next_event_type = "HARVEST"
 
-    # Kiểm tra xem vai trò của người dùng có khớp với hành động tiếp theo không
     allowed_event_for_role = role_to_event.get(sub_role)
     current_event = None
     if next_event_type == allowed_event_for_role:
-        current_event = next_event_type # Chỉ cho phép hành động nếu vai trò và trạng thái khớp
+        current_event = next_event_type
+
+    user_products = []
+    user_product_ids = bc.get_products_by_actor(user)
+    for pid in user_product_ids:
+        last_block = bc.get_last_block(pid)
+        if last_block:
+            product_name = last_block.data.get("details", {}).get("product_name", pid)
+            user_products.append({
+                "product_id": pid,
+                "product_name": product_name,
+                "qr_code": make_qr_base64(pid)
+            })
         
     return render_template('producer.html', 
                            user=user, 
@@ -335,8 +364,8 @@ def producer():
                            event_type_labels=EVENT_TYPES,
                            product_info=product_info,
                            sub_role=sub_role,
-                           role_label=ROLE_LABELS.get(sub_role, "Nhà sản xuất"))
-
+                           role_label=ROLE_LABELS.get(sub_role, "Nhà sản xuất"),
+                           user_products=user_products)
 
 # ════════════════════════════════════════════════════════════════
 #  CONSUMER — Tra cứu sản phẩm
@@ -389,53 +418,90 @@ def uploaded_file(filename):
 @app.route("/admin")
 @login_required(role="admin")
 def admin():
-    all_blocks = [b.to_dict() for b in bc.get_all_blocks()]
+    all_blocks = [b.to_dict() for b in bc.chain] # Sửa ở đây
     users = list(users_collection.find().sort("username", 1))
     return render_template("admin.html", blocks=all_blocks, users=users)
 
+
+@app.route("/admin/reset", methods=["POST"])
+@login_required(role="admin")
+def reset_chain():
+    """Xóa toàn bộ blockchain và tạo lại genesis block."""
+    if bc.delete_all_blocks():
+        flash("✅ Blockchain đã được reset thành công!", "success")
+    else:
+        flash("❌ Đã có lỗi xảy ra khi reset blockchain.", "danger")
+    return redirect(url_for('admin'))
+    """Xóa toàn bộ blockchain và tạo lại genesis block."""
+    if bc.delete_all_blocks():
+        flash("✅ Blockchain đã được reset thành công!", "success")
+    else:
+        flash("❌ Đã có lỗi xảy ra khi reset blockchain.", "danger")
+    return redirect(url_for('admin'))
+
+
+# ───────────────── USER MANAGEMENT (CRUD) ──────────────────
+# DÁN ĐOẠN CODE NÀY VÀO FILE app.py, THAY THẾ CÁC HÀM CŨ
 
 # ───────────────── USER MANAGEMENT (CRUD) ──────────────────
 @app.route("/admin/users/add", methods=["GET", "POST"])
 @login_required(role="admin")
 def add_user():
+    """
+    Xử lý việc thêm người dùng mới.
+    - Hiển thị form khi dùng phương thức GET.
+    - Xử lý dữ liệu form khi dùng phương thức POST.
+    """
     if request.method == "POST":
-        username = request.form.get("username").strip()
-        password = request.form.get("password").strip()
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "").strip()
         role = request.form.get("role")
         sub_role = request.form.get("sub_role") if role == "producer" else None
-        full_name = request.form.get("full_name").strip()
+        full_name = request.form.get("full_name", "").strip()
 
-        if not username or not password or not full_name:
-            flash("Vui lòng điền đầy đủ các trường bắt buộc.", "danger")
-            return render_template("user_form.html", user=request.form)
+        # --- Validation (Kiểm tra dữ liệu) ---
+        if not all([username, password, role, full_name]):
+            flash("❌ Vui lòng điền đầy đủ các trường bắt buộc.", "danger")
+            # Giữ lại dữ liệu đã nhập và hiển thị lại form
+            return render_template("user_form.html", role_labels=ROLE_LABELS, user=request.form)
 
         if users_collection.find_one({"username": username}):
-            flash("Tên đăng nhập đã tồn tại.", "danger")
-            return render_template("user_form.html", user=request.form)
+            flash(f"❌ Tên người dùng '{username}' đã tồn tại. Vui lòng chọn tên khác.", "danger")
+            return render_template("user_form.html", role_labels=ROLE_LABELS, user=request.form)
 
-        hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
-        
-        new_user = {
+        # --- Tạo người dùng ---
+        users_collection.insert_one({
             "username": username,
-            "password_hash": hashed_password,
+            "password_hash": generate_password_hash(password, method='pbkdf2:sha256'),
             "role": role,
             "sub_role": sub_role,
             "full_name": full_name,
             "created_at": datetime.now()
-        }
-        users_collection.insert_one(new_user)
-        flash(f"Đã tạo người dùng '{username}' thành công.", "success")
+        })
+        flash(f"✅ Đã tạo thành công người dùng '{username}'.", "success")
         return redirect(url_for("admin"))
-
-    return render_template("user_form.html")
+        
+    # --- Xử lý cho phương thức GET (lần đầu vào trang) ---
+    return render_template("user_form.html", role_labels=ROLE_LABELS)
 
 
 @app.route("/admin/users/edit/<user_id>", methods=["GET", "POST"])
 @login_required(role="admin")
 def edit_user(user_id):
-    user = users_collection.find_one({"_id": ObjectId(user_id)})
+    """
+    Xử lý việc sửa thông tin người dùng.
+    - Lấy thông tin người dùng và hiển thị form khi dùng GET.
+    - Cập nhật thông tin khi dùng POST.
+    """
+    try:
+        # Cố gắng tìm người dùng bằng ID
+        user = users_collection.find_one({"_id": ObjectId(user_id)})
+    except:
+        # Bắt lỗi nếu user_id không hợp lệ
+        user = None
+
     if not user:
-        flash("Không tìm thấy người dùng.", "danger")
+        flash("❌ Không tìm thấy người dùng.", "danger")
         return redirect(url_for("admin"))
 
     if request.method == "POST":
@@ -443,6 +509,10 @@ def edit_user(user_id):
         role = request.form.get("role")
         sub_role = request.form.get("sub_role") if role == "producer" else None
         full_name = request.form.get("full_name").strip()
+
+        if not full_name or not role:
+             flash("❌ Vui lòng điền đầy đủ Tên và Vai trò.", "danger")
+             return render_template("user_form.html", user=user, role_labels=ROLE_LABELS)
 
         update_data = {
             "role": role,
@@ -450,64 +520,43 @@ def edit_user(user_id):
             "full_name": full_name
         }
 
+        # Chỉ cập nhật mật khẩu nếu người dùng nhập mật khẩu mới
         if password:
             update_data["password_hash"] = generate_password_hash(password, method='pbkdf2:sha256')
 
         users_collection.update_one({"_id": ObjectId(user_id)}, {"$set": update_data})
-        flash(f"Đã cập nhật người dùng '{user['username']}'.", "success")
+        flash(f"✅ Đã cập nhật thành công người dùng '{user['username']}'.", "success")
         return redirect(url_for("admin"))
 
-    return render_template("user_form.html", user=user)
+    # --- Xử lý cho phương thức GET (hiển thị form với thông tin cũ) ---
+    return render_template("user_form.html", user=user, role_labels=ROLE_LABELS)
 
 
 @app.route("/admin/users/delete/<user_id>", methods=["POST"])
 @login_required(role="admin")
 def delete_user(user_id):
-    user_to_delete = users_collection.find_one({"_id": ObjectId(user_id)})
+    """
+    Xử lý việc xóa người dùng.
+    - Ngăn không cho admin tự xóa tài khoản của mình.
+    """
+    try:
+        user_to_delete = users_collection.find_one({"_id": ObjectId(user_id)})
+    except:
+        user_to_delete = None
     
-    # Prevent admin from deleting themselves
-    if user_to_delete and user_to_delete["username"] == session.get("user"):
-        flash("Bạn không thể xóa chính mình.", "danger")
+    if not user_to_delete:
+        flash("❌ Không tìm thấy người dùng để xóa.", "danger")
+        return redirect(url_for("admin"))
+
+    # Ngăn admin tự xóa chính mình
+    if user_to_delete["username"] == session.get("user"):
+        flash("❌ Bạn không thể xóa tài khoản của chính mình.", "danger")
         return redirect(url_for("admin"))
 
     users_collection.delete_one({"_id": ObjectId(user_id)})
-    flash("Đã xóa người dùng.", "success")
+    flash(f"✅ Đã xóa thành công người dùng '{user_to_delete['username']}'.", "success")
     return redirect(url_for("admin"))
-
-
-@app.route("/admin/validate")
-@login_required(role="admin")
-def validate():
-    bc.reset()  # Tải lại chain từ DB trước khi kiểm tra
-    valid, message = bc.is_valid()
-    return jsonify({"valid": valid, "message": message})
-
-
-@app.route("/admin/tamper", methods=["POST"])
-@login_required(role="admin")
-def tamper():
-    """
-    ═══════════════════════════════════════════════════════════════
-    Demo tamper: sửa location của block được chọn thành '[TAMPERED]'
-    Sau đó is_valid() sẽ trả về False.
-    ═══════════════════════════════════════════════════════════════
-    """
-    index = int(request.form.get("index", 1))
-    if index > 0:
-        bc.tamper(index)
-        flash(f"Block {index} đã bị thay đổi. Hãy kiểm tra lại chuỗi.", "warning")
-    return redirect(url_for("admin"))
-
-@app.route("/admin/reset", methods=["POST"])
-@login_required(role="admin")
-def reset_chain():
-    """
-    Xóa toàn bộ blockchain.
-    """
-    bc.delete_all_blocks()
-    flash("✅ Toàn bộ blockchain đã được xóa sạch!", "success")
-    return redirect(url_for("admin"))
-
+   
 # =================== ONE-TIME ADMIN CREATION ===================
 @app.route("/create-admin")
 def create_admin():

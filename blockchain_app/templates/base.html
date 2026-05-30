@@ -95,7 +95,13 @@
               <i class="bi bi-box-arrow-in-right me-1"></i>Đăng nhập
             </a>
             <ul class="dropdown-menu dropdown-menu-end">
-              <li><a class="dropdown-item" href="{{ url_for('login_role', role='producer') }}">Dành cho Đối tác</a></li>
+              <li><h6 class="dropdown-header">Dành cho Đối tác sản xuất</h6></li>
+              <li><a class="dropdown-item" href="{{ url_for('login_role', role='farmer') }}">Nông hộ trồng cà phê</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('login_role', role='processor') }}">Đơn vị sơ chế</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('login_role', role='roaster') }}">Xưởng rang xay</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('login_role', role='distributor') }}">Đơn vị phân phối</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('login_role', role='retailer') }}">Quán cà phê</a></li>
+              <li><hr class="dropdown-divider"></li>
               <li><a class="dropdown-item" href="{{ url_for('login_role', role='admin') }}">Dành cho Quản trị viên</a></li>
             </ul>
           </li>

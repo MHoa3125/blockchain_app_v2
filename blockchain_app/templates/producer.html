@@ -16,35 +16,19 @@
       </div>
       <div class="card-body p-4">
 
-        <!-- 1. FORM TÌM KIẾM -->
-        <form method="GET" class="d-flex gap-2 border-bottom pb-4 mb-4">
-          <input type="text" id="product-id-search" name="product_id" class="form-control" placeholder="Nhập Product ID để cập nhật, hoặc để trống để tạo mới..." value="{{ request.args.get('product_id', '') }}">
-          <button type="submit" class="btn btn-primary">
-            <i class="bi bi-search"></i> Tìm
-          </button>
-        </form>
-
         <!-- 2. FORM THÊM BLOCK -->
-        <form method="POST" action="{{ url_for('producer') }}" enctype="multipart/form-data">
+        <form method="POST" enctype="multipart/form-data">
           <!-- Product ID sẽ được thêm vào đây bằng JS nếu đang cập nhật -->
-          <div id="product-id-form-container"></div>
+          <input type="hidden" name="product_id" value="{{ product_id }}">
 
           <!-- Hiển thị thông tin sản phẩm đã có (nếu có) -->
-          {% if product_info %}
-          <div id="existing-product-info" class="mb-4">
-            <h6 class="fw-bold">Thông tin sản phẩm hiện tại: <code>{{ product_info.product_id }}</code></h6>
-            <div class="row g-2">
-              {% for key, value in product_info.items() %}
-                {% if key != 'product_id' %}
-                <div class="col-md-6">
-                  <div class="form-control bg-light">
-                    <small class="text-muted text-capitalize">{{ key.replace('_', ' ') }}</small>
-                    <div class="fw-semibold">{{ value }}</div>
-                  </div>
-                </div>
-                {% endif %}
-              {% endfor %}
-            </div>
+          {% if product_id %}
+          <div id="existing-product-info" class="mb-4 p-3 bg-light border rounded">
+            <h6 class="fw-bold mb-1">Sản phẩm đang xử lý</h6>
+            <p class="mb-1"><strong>ID:</strong> <code>{{ product_id }}</code></p>
+            {% if product_info.product_name %}
+            <p class="mb-0"><strong>Tên:</strong> {{ product_info.product_name }}</p>
+            {% endif %}
           </div>
           {% endif %}
 
@@ -127,7 +111,7 @@ document.addEventListener("DOMContentLoaded", function() {
   const eventTypeValue = document.getElementById('event_type_value').value;
 
   const productInfo = {{ product_info | tojson }};
-  const isUpdateMode = productInfo && Object.keys(productInfo).length > 0 && productInfo.product_id;
+  const isUpdateMode = !!'{{ product_id }}';
 
   // Cấu trúc định nghĩa các trường cho từng loại sự kiện
   const EVENT_DEFINITIONS = {
@@ -251,7 +235,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
     // Nếu đang ở chế độ cập nhật (có product_id), thêm trường ẩn vào form
     if (isUpdateMode) {
-      productIdFormContainer.innerHTML = `<input type="hidden" name="product_id" value="${productInfo.product_id}">`;
+      // Không cần làm gì ở đây nữa vì input hidden đã có sẵn trong HTML
     }
   }
 
@@ -261,9 +245,9 @@ document.addEventListener("DOMContentLoaded", function() {
 </script>
 
 <!-- ================================================================== -->
-<!--  DANH SÁCH SẢN PHẨM ĐÃ TẠO (CHỈ DÀNH CHO NHÀ SẢN XUẤT)          -->
+<!--  DANH SÁCH SẢN PHẨM ĐÃ THAM GIA (HIỂN THỊ CHO TẤT CẢ)          -->
 <!-- ================================================================== -->
-{% if sub_role == 'farmer' and user_products %}
+{% if user_products %}
 <div class="row mt-5">
     <div class="col-lg-10 offset-lg-1">
         <hr>
