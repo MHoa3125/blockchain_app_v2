@@ -91,6 +91,12 @@ class Blockchain:
                 with open(creds_path,"w") as f:
                     f.write(content)
                 print("✅ credentials file created")
+            
+            # Kiểm tra xem file credentials.json có tồn tại trước khi đọc
+            if not os.path.exists(creds_path):
+                print("⚠️ Cảnh báo: Không tìm thấy file 'credentials.json'. Bỏ qua đồng bộ Google Sheet khi chạy cục bộ.")
+                return
+
             creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
             client = gspread.authorize(creds)
             sheet = client.open("Blockchain Log").sheet1

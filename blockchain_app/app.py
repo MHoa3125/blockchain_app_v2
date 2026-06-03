@@ -1,9 +1,11 @@
+# pyrefly: ignore [missing-import]
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_from_directory
 from blockchain import Blockchain
 import qrcode
 import io
 import base64
 from datetime import datetime
+# pyrefly: ignore [missing-import]
 from werkzeug.security import generate_password_hash, check_password_hash
 from bson.objectid import ObjectId
 import os
@@ -296,7 +298,7 @@ def producer():
             details = { "shop_name": request.form.get('shop_name'), "receive_date": request.form.get('receive_date'), "product_status": request.form.get('product_status'), }
 
         # 4. Xử lý bằng chứng (file upload)
-        MANDATORY_PROOF_EVENTS = ["PROCESSING", "ROASTING"]
+        MANDATORY_PROOF_EVENTS = []
         file = request.files.get('proof_file')
         if event_type in MANDATORY_PROOF_EVENTS and (not file or file.filename == ''):
             flash(f"❌ Lỗi: Giai đoạn '{EVENT_TYPES.get(event_type)}' yêu cầu phải có tệp bằng chứng.", "danger")
@@ -313,6 +315,21 @@ def producer():
             filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{secure_filename(file.filename)}"
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
             new_data['proofs'].append(filename)
+
+        # ── Traceability Validation (Xác thực lần cuối trước khi ghi Blockchain) ──
+        from validation import get_validator
+        validator = get_validator(event_type)
+        # Truyền cả request.files để validator kiểm tra sự trùng khớp của file đính kèm
+        validation_result = validator.validate(new_data, request.files)
+        if not validation_result.is_valid:
+            for err in validation_result.errors:
+                flash(f"❌ {err}", "danger")
+            return redirect(url_for('producer', product_id=product_id))
+        
+        # Lưu Trust Score và Warnings vào dữ liệu block
+        new_data["trust_score"] = validation_result.trust_score
+        if validation_result.warnings:
+            new_data["warnings"] = validation_result.warnings
 
         try:
             bc.add_block(new_data, actor_sub_role=sub_role)
@@ -366,6 +383,72 @@ def producer():
                            sub_role=sub_role,
                            role_label=ROLE_LABELS.get(sub_role, "Nhà sản xuất"),
                            user_products=user_products)
+
+
+# ════════════════════════════════════════════════════════════════
+#  VALIDATE DATA (AJAX Endpoint)
+# ════════════════════════════════════════════════════════════════
+@app.route("/validate-data", methods=["POST"])
+def validate_data():
+    from validation import get_validator
+    event_type = request.form.get("event_type")
+    
+    # Thu thập dữ liệu giống hệt như logic lưu trữ
+    details = {}
+    if event_type == 'HARVEST':
+        farm_name = request.form.get('farm_name')
+        coffee_variety = request.form.get('coffee_variety')
+        details = {
+            "product_name": f"{coffee_variety} - {farm_name}",
+            "farm_name": farm_name,
+            "coffee_variety": coffee_variety,
+            "region": request.form.get('region'),
+            "altitude": request.form.get('altitude'),
+            "planting_date": request.form.get('planting_date'),
+            "harvest_date": request.form.get('harvest_date'),
+        }
+    elif event_type == 'PROCESSING':
+        details = { "processing_method": request.form.get('processing_method'), "fermentation_time_hours": request.form.get('fermentation_time_hours'), "drying_method": request.form.get('drying_method'), "moisture_percentage": request.form.get('moisture_percentage'), "processing_date": request.form.get('processing_date'), }
+    elif event_type == 'ROASTING':
+        details = { "roast_level": request.form.get('roast_level'), "roast_date": request.form.get('roast_date'), "roast_temperature_celsius": request.form.get('roast_temperature_celsius'), "roastery_name": request.form.get('roastery_name'), "packaging_date": request.form.get('packaging_date'), }
+    elif event_type == 'DISTRIBUTION':
+        details = { "shipment_id": request.form.get('shipment_id'), "delivery_date": request.form.get('delivery_date'), "warehouse_location": request.form.get('warehouse_location'), "delivery_status": request.form.get('delivery_status'), }
+    elif event_type == 'RETAIL':
+        details = { "shop_name": request.form.get('shop_name'), "receive_date": request.form.get('receive_date'), "product_status": request.form.get('product_status'), }
+
+    product_id = request.form.get("product_id", "").strip().upper()
+
+    new_data = {
+        "product_id": product_id,
+        "event_type": event_type,
+        "details": {k: v for k, v in details.items() if v}
+    }
+    
+    validator = get_validator(event_type)
+    result = validator.validate(new_data, request.files)
+    
+    if result.is_valid:
+        msg = "✅ Dữ liệu hợp lệ! Sẵn sàng để ghi nhận."
+        if result.warnings:
+            warnings_html = "<ul class='mb-0 mt-2 text-warning' style='font-size: 0.9em;'>"
+            for wrn in result.warnings:
+                warnings_html += f"<li>⚠️ {wrn}</li>"
+            warnings_html += "</ul>"
+            msg += warnings_html
+        return jsonify({
+            "status": "success",
+            "message": msg,
+            "data": result.to_dict()
+        })
+    else:
+        # Gộp tất cả các lỗi và cảnh báo vào danh sách hiển thị
+        all_errors = result.errors + result.warnings
+        return jsonify({
+            "status": "error",
+            "errors": all_errors,
+            "data": result.to_dict()
+        })
+
 
 # ════════════════════════════════════════════════════════════════
 #  CONSUMER — Tra cứu sản phẩm
@@ -584,4 +667,4 @@ def create_admin():
 # ===============================================================
 
 if __name__ == "__main__":
-    app.run(debug=True, host='0.0.0.0')
+    app.run(debug=True, host='0.0.0.0', use_reloader=False)

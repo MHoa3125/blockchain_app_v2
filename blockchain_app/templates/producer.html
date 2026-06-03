@@ -3,10 +3,6 @@
 {% block title %}Thêm sự kiện{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="h3 mb-0 text-gray-800">Thêm Sự Kiện Vào Chuỗi</h1>
-</div>
-
 <div class="row g-4">
   <!-- Cột chính (7/12) -->
   <div class="col-lg-7">
@@ -46,15 +42,26 @@
 
           <!-- Trường upload file bằng chứng -->
           <div id="proof-upload-container" class="mt-3 border-top pt-4" style="display: none;">
-              <label for="proof_file" class="form-label fw-semibold">Tệp bằng chứng <span id="proof-label-modifier" class="text-muted">(Tùy chọn)</span></label>
+              <label for="proof_file" class="form-label fw-semibold">Tệp bằng chứng <span id="proof-label-modifier" class="text-danger">(Bắt buộc *)</span></label>
               <input class="form-control" type="file" id="proof_file" name="proof_file">
               <div class="form-text">Đính kèm hình ảnh, tài liệu (PDF, Word),... làm bằng chứng.</div>
           </div>
 
-          <!-- Nút submit -->
-          <button id="submit-button" type="submit" class="btn btn-dark px-4 mt-3">
-            <i class="bi bi-plus-lg me-2"></i> Thêm Block vào chuỗi
-          </button>
+          <!-- Vùng hiển thị thông báo validation (có nút tắt) -->
+          <div id="validation-feedback-box" class="alert alert-dismissible fade show p-3 mt-3 mb-0" style="display: none;" role="alert">
+            <div id="validation-feedback-content"></div>
+            <button type="button" class="btn-close" onclick="document.getElementById('validation-feedback-box').style.display='none';" aria-label="Close"></button>
+          </div>
+
+          <!-- Nút kiểm tra và submit -->
+          <div class="d-flex gap-2 mt-4">
+            <button id="validate-button" type="button" class="btn btn-warning px-4 text-dark fw-bold">
+              <i class="bi bi-shield-check me-2"></i> Kiểm tra dữ liệu
+            </button>
+            <button id="submit-button" type="submit" class="btn btn-dark px-4" disabled style="opacity: 0.5; cursor: not-allowed;">
+              <i class="bi bi-plus-lg me-2"></i> Ghi nhận
+            </button>
+          </div>
         </form>
 
       </div>
@@ -97,7 +104,9 @@
       </div>
     </div>
   </div>
-</div>
+</div><!-- Dữ liệu JSON từ Backend để JS sử dụng mà không gây lỗi cảnh báo cú pháp (red warnings) trong IDE -->
+<script id="product-info-data" type="application/json">{{ product_info | tojson }}</script>
+<script id="product-id-data" type="application/json">{{ product_id | tojson }}</script>
 
 <script>
 document.addEventListener("DOMContentLoaded", function() {
@@ -110,8 +119,8 @@ document.addEventListener("DOMContentLoaded", function() {
   const proofUploadContainer = document.getElementById('proof-upload-container');
   const eventTypeValue = document.getElementById('event_type_value').value;
 
-  const productInfo = {{ product_info | tojson }};
-  const isUpdateMode = !!'{{ product_id }}';
+  const productInfo = JSON.parse(document.getElementById('product-info-data').textContent || '{}');
+  const isUpdateMode = !!JSON.parse(document.getElementById('product-id-data').textContent || 'null');
 
   // Cấu trúc định nghĩa các trường cho từng loại sự kiện
   const EVENT_DEFINITIONS = {
@@ -227,8 +236,12 @@ document.addEventListener("DOMContentLoaded", function() {
     if (EVENT_DEFINITIONS[eventTypeValue]) {
       const fields = EVENT_DEFINITIONS[eventTypeValue].fields;
       dynamicFieldsContainer.innerHTML = generateFieldsHtml(fields);
-      proofUploadContainer.style.display = 'block';
-      updateProofLabel(eventTypeValue);
+      if (eventTypeValue === 'HARVEST') {
+        proofUploadContainer.style.display = 'block';
+        updateProofLabel(eventTypeValue);
+      } else {
+        proofUploadContainer.style.display = 'none';
+      }
     } else {
       submitButton.style.display = 'none';
     }
@@ -237,6 +250,73 @@ document.addEventListener("DOMContentLoaded", function() {
     if (isUpdateMode) {
       // Không cần làm gì ở đây nữa vì input hidden đã có sẵn trong HTML
     }
+  }
+
+  // ── XỬ LÝ SỰ KIỆN CLICK NÚT KIỂM TRA DỮ LIỆU (AJAX) ──
+  const validateButton = document.getElementById('validate-button');
+  const feedbackBox = document.getElementById('validation-feedback-box');
+  const feedbackContent = document.getElementById('validation-feedback-content');
+  const formElement = document.querySelector('form');
+
+  if (validateButton) {
+    validateButton.addEventListener('click', function() {
+      // Đổi trạng thái nút khi đang kiểm tra
+      validateButton.disabled = true;
+      validateButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Đang kiểm tra...';
+      
+      const formData = new FormData(formElement);
+      
+      fetch('/validate-data', {
+        method: 'POST',
+        body: formData
+      })
+      .then(response => response.json())
+      .then(result => {
+        validateButton.disabled = false;
+        validateButton.innerHTML = '<i class="bi bi-shield-check me-2"></i> Kiểm tra dữ liệu';
+        
+        feedbackBox.style.display = 'block';
+        feedbackBox.className = 'alert alert-dismissible fade show p-3 mt-3 mb-0'; // Reset classes
+        
+        if (result.status === 'success') {
+          // Thành công
+          feedbackBox.classList.add('alert-success');
+          feedbackContent.innerHTML = `<strong>${result.message}</strong>`;
+          
+          // Kích hoạt nút Ghi nhận
+          submitButton.disabled = false;
+          submitButton.style.opacity = '1';
+          submitButton.style.cursor = 'pointer';
+        } else {
+          // Thất bại
+          feedbackBox.classList.add('alert-danger');
+          let errorsHtml = '<strong>Phát hiện lỗi dữ liệu:</strong><ul class="mb-0 mt-2">';
+          result.errors.forEach(err => {
+            errorsHtml += `<li>${err}</li>`;
+          });
+          errorsHtml += '</ul>';
+          feedbackContent.innerHTML = errorsHtml;
+          
+          // Vô hiệu hóa nút Ghi nhận
+          submitButton.disabled = true;
+          submitButton.style.opacity = '0.5';
+          submitButton.style.cursor = 'not-allowed';
+        }
+      })
+      .catch(error => {
+        validateButton.disabled = false;
+        validateButton.innerHTML = '<i class="bi bi-shield-check me-2"></i> Kiểm tra dữ liệu';
+        
+        feedbackBox.style.display = 'block';
+        feedbackBox.className = 'alert alert-dismissible fade show alert-danger p-3 mt-3 mb-0';
+        feedbackContent.innerHTML = '<strong>❌ Lỗi kết nối hệ thống:</strong> Không thể gửi yêu cầu kiểm tra dữ liệu.<br><small class="text-muted">Chi tiết: ' + error.message + '</small>';
+        
+        submitButton.disabled = true;
+        submitButton.style.opacity = '0.5';
+        submitButton.style.cursor = 'not-allowed';
+        console.error("Validation error details:", error);
+      });
+    });
   }
 
   // Chạy hàm khởi tạo khi trang được tải
