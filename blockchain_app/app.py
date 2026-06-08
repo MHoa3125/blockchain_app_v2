@@ -316,7 +316,7 @@ def producer():
             new_data['proofs'].append(filename)
 
         # ── Traceability Validation (Xác thực lần cuối trước khi ghi Blockchain) ──
-        from validation import get_validator
+        from blockchain_app.validation import get_validator
         validator = get_validator(event_type)
         # Truyền cả request.files để validator kiểm tra sự trùng khớp của file đính kèm
         validation_result = validator.validate(new_data, request.files)
@@ -389,7 +389,7 @@ def producer():
 # ════════════════════════════════════════════════════════════════
 @app.route("/validate-data", methods=["POST"])
 def validate_data():
-    from validation import get_validator
+    from blockchain_app.validation import get_validator
     event_type = request.form.get("event_type")
     
     # Thu thập dữ liệu giống hệt như logic lưu trữ
