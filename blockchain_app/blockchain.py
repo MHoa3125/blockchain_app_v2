@@ -7,22 +7,20 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 # --- Cấu hình MongoDB ---
-# !!! QUAN TRỌNG: Hãy dán chuỗi kết nối HOÀN CHỈNH của bạn vào đây
-# Thay thế mycluster.xxxxx.mongodb.net bằng cụm cluster của bạn từ trang web MongoDB Atlas
 MONGO_URI = "mongodb+srv://tranthimyhoa3125_db_user:Admin123@mycluster.22hhxtr.mongodb.net/?appName=MyCluster"
 DB_NAME = "blockchain_db"
 COLLECTION_NAME = "chain"
 # -------------------------
 
-
 class Block:
-    def __init__(self, index, timestamp, data, previous_hash, nonce=0):
-        self.index         = index
-        self.timestamp     = timestamp
-        self.data          = data  # Dữ liệu linh động, chứa mọi thứ
-        self.nonce         = nonce
+    
+    def __init__(self, index, timestamp, data, previous_hash, hash_value=None):
+        self.index = index
+        self.timestamp = timestamp
+        self.data = data
         self.previous_hash = previous_hash
-        self.hash          = self.calculate_hash()
+        # Nếu load từ DB → dùng hash cũ, nếu tạo block mới → tính hash mới
+        self.hash = hash_value if hash_value else self.calculate_hash()
 
     @property
     def product_id(self):
@@ -38,7 +36,6 @@ class Block:
             "index":         self.index,
             "timestamp":     self.timestamp,
             "data":          self.data,
-            "nonce":         self.nonce,
             "previous_hash": self.previous_hash,
         }
         # Dumps với sort_keys=True để đảm bảo hash nhất quán
@@ -51,12 +48,9 @@ class Block:
             "index":         self.index,
             "timestamp":     self.timestamp,
             "data":          self.data,
-            "nonce":         self.nonce,
             "previous_hash": self.previous_hash,
             "hash":          self.hash,
         }
-
-
 
 class Blockchain:
     def __init__(self):
@@ -84,45 +78,61 @@ class Blockchain:
     def _write_to_google_sheet(self, block):
         try:
             print("📝 Đang ghi vào Google Sheet...")
-            scope = ["https://spreadsheets.google.com/feeds", 'https://www.googleapis.com/auth/spreadsheets',
-                     "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"]
+            scope = [
+                "https://spreadsheets.google.com/feeds",
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive.file",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            BASE_DIR = os.path.dirname(__file__)
+            creds_path = os.path.join(BASE_DIR,"credentials.json")
+            if os.getenv("GOOGLE_CREDENTIALS"):
+                content = os.getenv("GOOGLE_CREDENTIALS")
+                with open(creds_path,"w") as f:
+                    f.write(content)
+                print("✅ credentials file created")
             
-            creds_path = os.path.join(os.path.dirname(__file__), 'credentials.json')
+            # Kiểm tra xem file credentials.json có tồn tại trước khi đọc
+            if not os.path.exists(creds_path):
+                print("⚠️ Cảnh báo: Không tìm thấy file 'credentials.json'. Bỏ qua đồng bộ Google Sheet khi chạy cục bộ.")
+                return
+
             creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
-            
             client = gspread.authorize(creds)
             sheet = client.open("Blockchain Log").sheet1
-
-            # Chuẩn bị dữ liệu để ghi
-            # Chuyển đổi dữ liệu data của block thành chuỗi JSON để dễ đọc trong sheet
             data_str = json.dumps(block.data, ensure_ascii=False)
-            
-            row = [block.index, block.timestamp, data_str, block.previous_hash, block.hash, block.nonce]
+            row = [
+                block.index,
+                block.timestamp,
+                data_str,
+                block.previous_hash,
+                block.hash
+            ]
             sheet.append_row(row)
             print("✅ Ghi vào Google Sheet thành công.")
         except Exception as e:
             print(f"❌ Lỗi khi ghi vào Google Sheet: {e}")
 
+    def _from_doc(self, doc: dict) -> Block:
+        """Helper để chuyển đổi document từ MongoDB thành đối tượng Block."""
+        return Block(
+            index=doc["index"],
+            timestamp=doc["timestamp"],
+            data=doc["data"],
+            previous_hash=doc["previous_hash"],
+            hash_value=doc["hash"]
+        )
+
     def _load_chain_from_db(self):
-        """Tải toàn bộ chain từ database và sắp xếp theo index."""
+        """Tải toàn bộ chain từ MongoDB."""
         try:
-            chain_data = list(self.collection.find().sort("index", ASCENDING))
-            self.chain = [
-                Block(
-                    index=b["index"],
-                    timestamp=b["timestamp"],
-                    data=b["data"],
-                    previous_hash=b["previous_hash"],
-                    nonce=b.get("nonce", 0),
-                )
-                for b in chain_data
-            ]
+            chain_data = self.collection.find().sort("index", ASCENDING)
+            self.chain = [self._from_doc(b) for b in chain_data]
             print(f"📚 Đã tải {len(self.chain)} block từ database.")
         except Exception as e:
             print(f"❌ Lỗi khi tải chain từ DB: {e}")
             self.chain = []
 
-    # ── Genesis block ─────────────────────────────────────────────
     def _create_genesis_block(self):
         genesis_data = {
             "product_id": "GENESIS",
@@ -137,29 +147,50 @@ class Blockchain:
             previous_hash="0" * 64,
         )
         self.chain.append(genesis)
-        self.collection.insert_one(genesis.to_dict())
+        # Chỉ chèn nếu collection trống
+        if self.collection.count_documents({}) == 0:
+            self.collection.insert_one(genesis.to_dict())
 
-    # ── Thêm block mới ────────────────────────────────────────────
-    def add_block(self, data: dict):
+    # ── Thêm block mới (Proof of Authority) ──────────────────
+    def add_block(self, data: dict, actor_sub_role: str):
         """
-        Thêm block mới vào chain với dữ liệu linh động.
-        - Giai đoạn 1: kiểm tra product_id không được trùng.
-        - Giai đoạn 2-5: kiểm tra product_id phải tồn tại.
+        Thêm block mới vào chain với cơ chế đồng thuận Proof of Authority (PoA) linh hoạt.
+        Quyền được xác thực bằng cách so sánh vai trò của người dùng (truyền từ app.py)
+        với vai trò yêu cầu của sự kiện.
         """
+        actor = data.get("actor")
+        event_type = data.get("event_type")
         product_id = data.get("product_id")
-        event = data.get("event")
-        is_first_stage = (event == "Trồng & Thu hoạch")
 
+        # 1. KIỂM TRA QUYỀN (AUTHORITY CHECK)
+        role_for_event = next((role for role, event in [
+            ("farmer", "HARVEST"), ("processor", "PROCESSING"),
+            ("roaster", "ROASTING"), ("distributor", "DISTRIBUTION"),
+            ("retailer", "RETAIL")
+        ] if event == event_type), None)
+
+        if not role_for_event:
+            raise ValueError(f"Loại sự kiện '{event_type}' không hợp lệ.")
+
+        # So sánh vai trò của người dùng với vai trò yêu cầu của sự kiện
+        if actor_sub_role != role_for_event:
+            raise ValueError(
+                f"Vai trò '{actor_sub_role}' của người dùng '{actor}' không có quyền thực hiện hành động '{event_type}' (yêu cầu vai trò '{role_for_event}')."
+            )
+
+        # 2. KIỂM TRA LOGIC NGHIỆP VỤ
+        is_genesis_event = (event_type == "HARVEST")
         if not product_id:
             raise ValueError("Product ID là bắt buộc.")
 
-        if not is_first_stage:
-            if not self.get_trace(product_id):
-                raise ValueError(f"Product ID '{product_id}' chưa tồn tại trong chain.")
-        else:
+        if is_genesis_event:
             if self.get_trace(product_id):
                 raise ValueError(f"Product ID '{product_id}' đã tồn tại.")
+        else:
+            if not self.get_trace(product_id):
+                raise ValueError(f"Product ID '{product_id}' chưa tồn tại.")
 
+        # 3. TẠO VÀ THÊM BLOCK MỚI
         new_block = Block(
             index=len(self.chain),
             timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -171,15 +202,7 @@ class Blockchain:
         self._write_to_google_sheet(new_block)
         return new_block
 
-    # ── Tra cứu theo product_id, event, actor ───────────────────
-    def get_blocks_by_event(self, event: str) -> list['Block']:
-        """Lấy tất cả các block có một sự kiện (event) cụ thể."""
-        return [b for b in self.chain if b.data.get("event") == event]
-
-    def get_blocks_by_event_and_actor(self, event: str, actor: str) -> list['Block']:
-        """Lấy tất cả các block có sự kiện và người tạo (actor) cụ thể."""
-        return [b for b in self.chain if b.data.get("event") == event and b.data.get("actor") == actor]
-
+    # ── Các hàm truy vấn ──────────────────────────────────────────
     def get_trace(self, product_id: str) -> list['Block']:
         """Lấy tất cả các block liên quan đến một product_id, sắp xếp theo thời gian."""
         return sorted(
@@ -187,57 +210,51 @@ class Blockchain:
             key=lambda b: b.timestamp
         )
 
-    # ── Validate toàn bộ chain ────────────────────────────────────
-    def is_valid(self):
+    def get_last_block(self, product_id: str) -> 'Block' or None:
+        """Lấy block cuối cùng (mới nhất) của một sản phẩm."""
+        trace = self.get_trace(product_id)
+        return trace[-1] if trace else None
+
+    def get_all_product_ids(self) -> list[str]:
         """
-        Trả về (bool, message).
-        Kiểm tra 2 điều kiện mỗi block:
-          1. Hash lưu trong block == hash tính lại từ dữ liệu
-          2. previous_hash == hash của block trước
+        Lấy danh sách tất cả các product_id duy nhất từ database,
+        loại trừ 'GENESIS'.
         """
-        for i in range(1, len(self.chain)):
-            cur  = self.chain[i]
-            prev = self.chain[i - 1]
+        try:
+            product_ids = self.collection.distinct("data.product_id")
+            return [pid for pid in product_ids if pid != 'GENESIS']
+        except Exception as e:
+            print(f"❌ Lỗi khi lấy danh sách product_id: {e}")
+            return []
 
-            if cur.hash != cur.calculate_hash():
-                return False, f"Block {i} (index={cur.index}): hash bị thay đổi!"
-
-            if cur.previous_hash != prev.hash:
-                return False, f"Block {i} (index={cur.index}): liên kết previous_hash bị đứt!"
-
-        return True, "Chain hợp lệ — tất cả block toàn vẹn."
-
-    # ── Tamper (chỉ dùng để demo) ─────────────────────────────────
-    def tamper_block(self, index: int, field: str, value: str):
+    def get_products_by_actor(self, actor_name: str) -> list[str]:
         """
-        Sửa thẳng 1 field của block trong DB mà KHÔNG tính lại hash.
-        → is_valid() sẽ trả về False ngay sau đó.
-        Chỉ dùng cho mục đích demo tính bất biến.
+        Lấy danh sách các product_id duy nhất mà một actor đã tham gia,
+        loại trừ 'GENESIS'.
         """
-        if index <= 0:
-            raise ValueError("Index không hợp lệ để tamper.")
+        try:
+            # Sử dụng query để lọc theo tên actor
+            query = {"data.actor": actor_name}
+            product_ids = self.collection.distinct("data.product_id", query)
+            return [pid for pid in product_ids if pid != 'GENESIS']
+        except Exception as e:
+            print(f"❌ Lỗi khi lấy danh sách sản phẩm theo actor '{actor_name}': {e}")
+            return []
 
-        if field in ["index", "timestamp", "data", "nonce", "previous_hash"]:
-            result = self.collection.update_one({"index": index}, {"$set": {field: value}})
-            if result.matched_count == 0:
-                raise ValueError(f"Block với index {index} không tồn tại.")
-            self._load_chain_from_db()
-        else:
-            raise ValueError(f"Field '{field}' không tồn tại trong Block.")
+    def get_blocks_by_event(self, event_type: str) -> list:
+        """Lấy tất cả các block có một loại sự kiện cụ thể trực tiếp từ DB."""
+        # Chỉ cần trả về list các document để app.py có thể dùng len()
+        blocks_cursor = self.collection.find({"data.event_type": event_type})
+        return list(blocks_cursor)
 
-    # ── Reset tamper: load lại từ DB ────────────────────────────
-    def reset(self):
-        """Tải lại chain từ DB để hoàn tác các thay đổi trong bộ nhớ."""
-        self._load_chain_from_db()
-
-    # ── Lấy tất cả blocks ────────────────────────────────────────
-    def get_all_blocks(self):
-        return self.chain
-
-    # ── Reset toàn bộ DB ────────────────────────────────────────
-    def reset_chain_in_db(self):
-        """Xóa tất cả các block trong DB và tạo lại genesis block."""
-        print("🔥 Đang xóa tất cả block trong database...")
-        self.collection.delete_many({})
-        self.chain = []
-        self._create_genesis_block()
+    def delete_all_blocks(self):
+        """Xóa tất cả các block và tạo lại genesis block."""
+        try:
+            self.collection.delete_many({})
+            self.chain = []
+            self._create_genesis_block()
+            print("✅ Đã xóa toàn bộ chain và tạo lại genesis block.")
+            return True
+        except Exception as e:
+            print(f"❌ Lỗi khi xóa chain: {e}")
+            return False

@@ -7,90 +7,38 @@
     <div class="card">
       <div class="card-header-navy p-4 text-center">
         <i class="bi bi-lock-fill fs-2"></i>
-        <h5 class="mt-2 mb-0">Đăng nhập hệ thống</h5>
+        <h5 class="mt-2 mb-0">
+          {% if role == 'producer' %}
+            Đăng nhập Producer
+          {% elif role == 'consumer' %}
+            Đăng nhập Consumer
+          {% elif role == 'admin' %}
+            Đăng nhập Admin
+          {% else %}
+            Đăng nhập hệ thống
+          {% endif %}
+        </h5>
       </div>
       <div class="card-body p-4">
         <form method="POST" id="loginForm">
           <div class="mb-3">
             <label class="form-label fw-semibold">Tên đăng nhập</label>
             <input type="text" name="username" id="usernameInput" class="form-control"
-                   placeholder="producer_01 / consumer / admin" required autofocus
-                   oninput="toggleRoleDropdown(this.value)">
+                   placeholder="Nhập tên đăng nhập" required autofocus>
           </div>
           <div class="mb-3">
             <label class="form-label fw-semibold">Mật khẩu</label>
             <input type="password" name="password" class="form-control" placeholder="Nhập mật khẩu" required>
           </div>
 
-          <!-- Dropdown vai trò — chỉ hiện khi username là producer_01 -->
-          <div class="mb-4" id="roleRow" style="display:none;">
-            <label class="form-label fw-semibold">
-              Vai trò <span class="text-danger">*</span>
-              <small class="text-muted fw-normal ms-1">— bạn đang thực hiện bước nào?</small>
-            </label>
-            <select name="sub_role" id="subRoleSelect" class="form-select">
-              <option value="">-- Chọn vai trò --</option>
-              {% for key, label in role_labels.items() %}
-              <option value="{{ key }}">{{ label }}</option>
-              {% endfor %}
-            </select>
-            <!-- Mô tả quyền hạn -->
-            <div id="roleHint" class="mt-2 small text-muted" style="min-height:36px;"></div>
-          </div>
+          <div class="mb-4"></div>
 
-          <button type="submit" class="btn btn-dark w-100" onclick="return validateForm()">
+          <button type="submit" class="btn btn-dark w-100">
             <i class="bi bi-box-arrow-in-right me-2"></i>Đăng nhập
           </button>
         </form>
-        <hr>
-        <p class="small text-muted mb-1"><strong>Tài khoản demo:</strong></p>
-        <ul class="small text-muted mb-0">
-          <li><code>producer_01</code> / <code>prod123</code> — Nhà sản xuất / Vận chuyển / Đại lý</li>
-          <li><code>consumer</code> / <code>cons123</code> — Người tiêu dùng (tra cứu)</li>
-          <li><code>admin</code> / <code>admin123</code> — Quản trị viên</li>
-        </ul>
       </div>
     </div>
   </div>
 </div>
-
-<script>
-const PRODUCER_ACCOUNTS = ["producer_01"];
-const roleHints = {
-  "producer":    "🌱 Chỉ nhập được: <strong>Trồng & Thu hoạch</strong>, <strong>Đóng gói & Kiểm định</strong>",
-  "transporter": "🚚 Chỉ nhập được: <strong>Vận chuyển</strong>",
-  "retailer":    "🏪 Chỉ nhập được: <strong>Đến đại lý / Siêu thị</strong>, <strong>Bán lẻ / Điểm bán</strong>",
-};
-
-function toggleRoleDropdown(username) {
-  const row = document.getElementById("roleRow");
-  const isProducer = PRODUCER_ACCOUNTS.includes(username.trim());
-  row.style.display = isProducer ? "block" : "none";
-  if (!isProducer) {
-    document.getElementById("subRoleSelect").value = "";
-    document.getElementById("roleHint").innerHTML = "";
-  }
-}
-
-document.getElementById("subRoleSelect").addEventListener("change", function() {
-  const hint = document.getElementById("roleHint");
-  hint.innerHTML = roleHints[this.value] || "";
-});
-
-function validateForm() {
-  const username = document.getElementById("usernameInput").value.trim();
-  const isProducer = PRODUCER_ACCOUNTS.includes(username);
-  if (isProducer) {
-    const sub = document.getElementById("subRoleSelect").value;
-    if (!sub) {
-      alert("Vui lòng chọn vai trò trước khi đăng nhập.");
-      return false;
-    }
-  }
-  return true;
-}
-
-// Kích hoạt nếu user đã điền username sẵn (ví dụ sau khi redirect back)
-toggleRoleDropdown(document.getElementById("usernameInput").value);
-</script>
 {% endblock %}

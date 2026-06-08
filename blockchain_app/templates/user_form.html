@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Sửa' if user else 'Thêm' }} Người dùng{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-8 col-lg-6">
+    <div class="card">
+      <div class="card-header-navy p-3">
+        <h5 class="mb-0 text-white"><i class="bi bi-person-plus-fill me-2"></i>{{ 'Sửa' if user else 'Thêm' }} Người dùng</h5>
+      </div>
+      <div class="card-body p-4">
+        <form method="POST">
+          <!-- Full Name -->
+          <div class="mb-3">
+            <label for="full_name" class="form-label">Tên đầy đủ</label>
+            <input type="text" class="form-control" id="full_name" name="full_name" value="{{ user.full_name if user else '' }}" required>
+          </div>
+
+          <!-- Username -->
+          <div class="mb-3">
+            <label for="username" class="form-label">Tên đăng nhập</label>
+            <input type="text" class="form-control" id="username" name="username" value="{{ user.username if user else '' }}" required {{ 'readonly' if user }}>
+            {% if user %}
+              <div class="form-text">Tên đăng nhập không thể thay đổi.</div>
+            {% endif %}
+          </div>
+
+          <!-- Password -->
+          <div class="mb-3">
+            <label for="password" class="form-label">Mật khẩu</label>
+            <input type="password" class="form-control" id="password" name="password" {{ 'required' if not user }}>
+            {% if user %}
+              <div class="form-text">Để trống nếu không muốn thay đổi mật khẩu.</div>
+            {% endif %}
+          </div>
+
+          <!-- Role -->
+          <div class="mb-3">
+            <label for="role" class="form-label">Vai trò</label>
+            <select class="form-select" id="role" name="role" onchange="toggleSubRole(this.value)">
+              <option value="producer" {{ 'selected' if user and user.role == 'producer' }}>Producer</option>
+              <option value="consumer" {{ 'selected' if user and user.role == 'consumer' }}>Consumer</option>
+              <option value="admin" {{ 'selected' if user and user.role == 'admin' }}>Admin</option>
+            </select>
+          </div>
+
+          <!-- Sub Role (Conditional) -->
+          <div class="mb-3" id="sub-role-div" style="display:none;">
+            <label for="sub_role" class="form-label">Vai trò phụ (Producer)</label>
+            <select class="form-select" id="sub_role" name="sub_role">
+              <option value="farmer" {{ 'selected' if user and user.sub_role == 'farmer' }}>Nông hộ (farmer)</option>
+              <option value="processor" {{ 'selected' if user and user.sub_role == 'processor' }}>Sơ chế (processor)</option>
+              <option value="roaster" {{ 'selected' if user and user.sub_role == 'roaster' }}>Xưởng rang (roaster)</option>
+              <option value="distributor" {{ 'selected' if user and user.sub_role == 'distributor' }}>Nhà phân phối (distributor)</option>
+              <option value="retailer" {{ 'selected' if user and user.sub_role == 'retailer' }}>Bán lẻ (retailer)</option>
+            </select>
+          </div>
+
+          <div class="d-flex justify-content-end gap-2">
+            <a href="{{ url_for('admin') }}" class="btn btn-secondary">Hủy</a>
+            <button type="submit" class="btn btn-primary">{{ 'Lưu thay đổi' if user else 'Tạo người dùng' }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function toggleSubRole(role) {
+    const subRoleDiv = document.getElementById('sub-role-div');
+    if (role === 'producer') {
+      subRoleDiv.style.display = 'block';
+    } else {
+      subRoleDiv.style.display = 'none';
+    }
+  }
+  // Initial check on page load
+  document.addEventListener('DOMContentLoaded', function() {
+    const roleSelect = document.getElementById('role');
+    toggleSubRole(roleSelect.value);
+  });
+</script>
+{% endblock %}

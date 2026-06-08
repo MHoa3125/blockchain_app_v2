@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Giới thiệu - Hộ chiếu số Cà phê Arabica Cầu Đất{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card p-4 p-md-5">
+      <h1 class="text-center mb-4" style="color: var(--navy);">Giới Thiệu Hệ Thống</h1>
+      <p class="lead text-center mb-5">
+        "Hộ chiếu số Cà phê Arabica Cầu Đất" là một dự án ứng dụng công nghệ Blockchain để tạo ra một hệ thống truy xuất nguồn gốc minh bạch và đáng tin cậy cho sản phẩm cà phê đặc sản của Việt Nam.
+      </p>
+
+      <div class="mb-4">
+        <h5 style="color: var(--blue);"><i class="bi bi-bullseye me-2"></i>Mục tiêu của dự án</h5>
+        <p>Mục tiêu chính là cung cấp cho người tiêu dùng một công cụ để xác thực và khám phá toàn bộ hành trình của hạt cà phê, từ lúc được thu hoạch tại nông trại ở Cầu Đất, qua các công đoạn sơ chế, rang xay, cho đến khi đến tay người tiêu dùng. Mỗi giai đoạn đều được ghi lại trên một chuỗi khối (blockchain), đảm bảo thông tin không thể bị thay đổi hay giả mạo.</p>
+      </div>
+
+      <div class="mb-4">
+        <h5 style="color: var(--blue);"><i class="bi bi-shield-check me-2"></i>Tại sao lại là Blockchain?</h5>
+        <p>Công nghệ Blockchain cung cấp tính **bất biến** và **phi tập trung**, là nền tảng hoàn hảo cho một hệ thống truy xuất nguồn gốc. Một khi dữ liệu đã được ghi vào chuỗi, nó không thể bị xóa hay sửa đổi, tạo ra một "sự thật" duy nhất và đáng tin cậy cho tất cả các bên tham gia, từ người nông dân đến người tiêu dùng.</p>
+      </div>
+
+      <div>
+        <h5 style="color: var(--blue);"><i class="bi bi-diagram-3 me-2"></i>Các bên tham gia</h5>
+        <p>Hệ thống bao gồm 5 vai trò chính, tương ứng với các mắt xích quan trọng trong chuỗi cung ứng cà phê đặc sản:</p>
+        <ul class="list-group">
+          <li class="list-group-item"><b>Nông hộ:</b> Ghi lại thông tin về vụ thu hoạch.</li>
+          <li class="list-group-item"><b>Đơn vị sơ chế:</b> Cập nhật các phương pháp xử lý sau thu hoạch.</li>
+          <li class="list-group-item"><b>Xưởng rang:</b> Ghi nhận thông tin về quá trình rang và đóng gói.</li>
+          <li class="list-group-item"><b>Nhà phân phối:</b> Xác nhận thông tin vận chuyển và lưu kho.</li>
+          <li class="list-group-item"><b>Quán cà phê/Bán lẻ:</b> Ghi nhận ngày nhận hàng và bán ra.</li>
+        </ul>
+      </div>
+
+      <div class="text-center mt-5">
+        <a href="{{ url_for('index') }}" class="btn btn-primary" style="background-color: var(--navy); border-color: var(--navy);">
+          <i class="bi bi-search me-2"></i>Bắt đầu Truy xuất Nguồn gốc
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,2 +1,12 @@
-
 blockchain_app/credentials.json
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.env
+.flaskenv
+blockchain_app/static/uploads/*
+!blockchain_app/static/uploads/.gitkeep

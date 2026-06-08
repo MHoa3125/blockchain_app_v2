@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+  <h4 class="fw-bold mb-0"><i class="bi bi-speedometer2 me-2"></i>Dashboard: {{ role_label }}</h4>
+</div>
+
+{# --- Dành cho Nông dân: Bắt đầu một chuỗi mới --- #}
+{% if sub_role == 'farmer' %}
+<div class="card text-center">
+  <div class="card-body p-5">
+    <h5 class="card-title">Bắt đầu một lô sản phẩm mới</h5>
+    <p class="card-text text-muted">Bạn là người khởi tạo chuỗi truy xuất nguồn gốc. Hãy tạo một lô sản phẩm mới để ghi nhận thông tin thu hoạch.</p>
+    <a href="{{ url_for('producer') }}" class="btn btn-primary btn-lg">
+      <i class="bi bi-plus-circle-fill me-2"></i> Tạo lô sản phẩm mới
+    </a>
+  </div>
+</div>
+
+{# --- Dành cho các vai trò khác: Hiển thị To-Do List --- #}
+{% else %}
+<div class="card">
+  <div class="card-header">
+    <h5 class="mb-0">Danh sách công việc đang chờ</h5>
+  </div>
+  <div class="card-body">
+    {% if todo_products %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead>
+            <tr>
+              <th scope="col">Mã sản phẩm</th>
+              <th scope="col">Tên sản phẩm</th>
+              <th scope="col">Trạng thái cuối</th>
+              <th scope="col">Người thực hiện cuối</th>
+              <th scope="col" class="text-end">Hành động</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for product in todo_products %}
+            <tr>
+              <td><span class="badge bg-secondary">{{ product.product_id }}</span></td>
+              <td>{{ product.product_name }}</td>
+              <td>{{ product.last_event }}</td>
+              <td>{{ product.last_actor }}</td>
+              <td class="text-end">
+                <a href="{{ url_for('producer', product_id=product.product_id) }}" class="btn btn-success">
+                  <i class="bi bi-pencil-square me-2"></i>Cập nhật
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="text-center p-4">
+        <i class="bi bi-check2-circle fs-1 text-success"></i>
+        <h5 class="mt-3">Tuyệt vời!</h5>
+        <p class="text-muted">Bạn đã hoàn thành tất cả công việc. Hiện không có lô hàng nào đang chờ bạn xử lý.</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
