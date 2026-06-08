@@ -5,8 +5,7 @@ from datetime import datetime
 import re
 from .result import ValidationResult
 from .rules import MIN_ALTITUDE, MAX_ALTITUDE, VALID_REGIONS, VALID_COFFEE_VARIETIES
-from blockchain import Blockchain
-
+from blockchain_app.blockchain import Blockchain
 bc = Blockchain()
 
 def get_latest_block_from_db(product_id: str):
