@@ -1,6 +1,6 @@
 # pyrefly: ignore [missing-import]
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_from_directory
-from blockchain import Blockchain
+from blockchain_app.blockchain import Blockchain
 import qrcode
 import io
 import base64
@@ -10,7 +10,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from bson.objectid import ObjectId
 import os
 from werkzeug.utils import secure_filename
-
 from bson.objectid import ObjectId
 
 
