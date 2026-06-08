@@ -258,3 +258,31 @@ class Blockchain:
         except Exception as e:
             print(f"❌ Lỗi khi xóa chain: {e}")
             return False
+
+    def is_chain_valid(self) -> (bool, int or None):
+        """
+        Kiểm tra tính toàn vẹn của toàn bộ chuỗi.
+        1. Tải lại dữ liệu mới nhất từ DB để đảm bảo không bị qua mặt.
+        2. Duyệt qua từng block:
+           - Kiểm tra previous_hash có khớp với hash của block trước đó không.
+           - Kiểm tra hash của block hiện tại có đúng không (bằng cách tính toán lại).
+        Trả về: (True, None) nếu hợp lệ.
+                 (False, block.index) nếu không hợp lệ tại block.index.
+        """
+        # Tải lại chain từ DB để đảm bảo dữ liệu luôn mới nhất trước khi kiểm tra
+        self._load_chain_from_db()
+
+        # Duyệt qua các block từ thứ hai trở đi
+        for i in range(1, len(self.chain)):
+            current_block = self.chain[i]
+            previous_block = self.chain[i - 1]
+
+            # 1. Kiểm tra nội dung: hash của block hiện tại có bị thay đổi không?
+            if current_block.calculate_hash() != current_block.hash:
+                return False, i
+
+            # 2. Kiểm tra liên kết: previous_hash của block hiện tại có khớp với hash của block trước không?
+            if current_block.previous_hash != previous_block.hash:
+                return False, i
+
+        return True, None

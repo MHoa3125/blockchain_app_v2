@@ -488,9 +488,20 @@ def trace():
 
 
 # ── Route để phục vụ file đã upload ───────────────────────────────
-@app.route('/uploads/<filename>')
+@app.route('/static/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
+@app.route("/admin/validate_chain", methods=["POST"])
+@login_required(role="admin")
+def validate_chain():
+    is_valid, tampered_block_index = bc.is_chain_valid()
+    if is_valid:
+        flash("✅ Chuỗi hợp lệ. Toàn bộ dữ liệu được bảo toàn.", "success")
+    else:
+        flash(f"❌ Chuỗi không hợp lệ! Phát hiện giả mạo tại khối {tampered_block_index}.", "danger")
+    return redirect(url_for("admin"))
 
 
 

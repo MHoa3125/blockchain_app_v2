@@ -44,9 +44,15 @@
   <!-- Blockchain Tab Pane -->
   <div class="tab-pane fade show active" id="blockchain" role="tabpanel" aria-labelledby="blockchain-tab">
     <div class="d-flex gap-2 flex-wrap mb-4">
+      <!-- Validate -->
+      <form method="POST" action="{{ url_for('validate_chain') }}">
+        <button type="submit" class="btn btn-primary">
+          <i class="fas fa-shield-alt me-2"></i>Kiểm tra tính toàn vẹn
+        </button>
+      </form>
       <!-- Reset -->
       <form method="POST" action="{{ url_for('reset_chain') }}"
-            onsubmit="return confirm('Reset toàn bộ chain về genesis? Không thể hoàn tác!')">
+            onsubmit="return confirm('Bạn có chắc chắn muốn reset toàn bộ chuỗi về trạng thái ban đầu? Hành động này không thể hoàn tác!')">
         <button type="submit" class="btn btn-outline-danger">
           <i class="bi bi-arrow-counterclockwise me-2"></i>Reset Chain
         </button>
